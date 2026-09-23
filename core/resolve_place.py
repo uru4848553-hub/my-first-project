@@ -61,6 +61,8 @@ class Placer:
             for clip in sec["clips"]:
                 self._place_clip(sec, clip, items[_norm(clip["path"])])
         self._place_narration(items[_norm(self.plan["audio"]["path"])])
+        if self.plan.get("bgm"):
+            self._place_bgm(items[_norm(self.plan["bgm"]["path"])])
         self._add_markers()
         return self.timeline.GetName(), self.warnings
 
@@ -77,6 +79,8 @@ class Placer:
     def _import(self, folder):
         """素材とナレーションをビンに取り込む。同じファイルが取り込み済みなら使い回す。"""
         paths = [c["path"] for s in self.plan["sections"] for c in s["clips"]] + [self.plan["audio"]["path"]]
+        if self.plan.get("bgm"):
+            paths.append(self.plan["bgm"]["path"])
         existing = {}
         for clip in folder.GetClipList() or []:
             path = clip.GetClipProperty("File Path")
@@ -187,7 +191,28 @@ class Placer:
                 f"実際: {placed.GetStart() - self.start}から{got}フレーム。素材の FPS {item.GetClipProperty('FPS')}、"
                 f"長さ {item.GetClipProperty('Frames')} フレーム、渡した endFrame {src}）")
 
+    def _place_bgm(self, item):
+        """BGM をナレーションの次のオーディオトラック（通常 A2）に置く。うまくいかなくても警告にとどめる。"""
+        bgm = self.plan["bgm"]
+        track = self.narration_track + 1
+        while self.timeline.GetTrackCount("audio") < track:
+            if not self.timeline.AddTrack("audio", "stereo"):
+                self.warnings.append("BGM 用のオーディオトラックを追加できませんでした。BGM は手動で置いてください")
+                return
+        src_fps = _float(item.GetClipProperty("FPS")) or self.fps
+        src = max(1, round(bgm["frames"] * src_fps / self.fps))
+        info = {"mediaPoolItem": item, "startFrame": 0, "endFrame": src - 1 if self.end_inclusive else src,
+                "trackIndex": track, "mediaType": 2, "recordFrame": self.start}
+        placed = self._append(info)
+        if placed is None:
+            self.warnings.append(f"BGM を A{track} に置けませんでした。BGM は手動で置いてください")
+            return
+        if abs(placed.GetDuration() - bgm["frames"]) > 1:
+            self.warnings.append(f"BGM の長さが想定と違います（想定 {bgm['frames']} フレーム、実際 {placed.GetDuration()} フレーム）")
+        self.log(f"BGM を A{track} に置きました（音量は Resolve で調整してください）")
+
     def _place_narration(self, item):
+        self.narration_track = 1
         info = {"mediaPoolItem": item, "trackIndex": 1, "mediaType": 2, "recordFrame": self.start}
         placed = self._append(info)
         if placed is None:
@@ -196,6 +221,7 @@ class Placer:
                 index = self.timeline.GetTrackCount("audio")
                 placed = self._append(dict(info, trackIndex=index))
                 if placed is not None:
+                    self.narration_track = index
                     self.warnings.append(f"ナレーションを A1 に置けなかったため、追加したモノラルトラック A{index} に置きました")
         if placed is None:
             raise PlaceError("ナレーションを A1 に置けません")
@@ -228,6 +254,8 @@ def check_plan(plan):
                 problems.append(f"{sec['label']}: ファイルがありません: {clip['path']}")
     if not os.path.isfile(plan["audio"]["path"]):
         problems.append(f"ナレーションがありません: {plan['audio']['path']}")
+    if plan.get("bgm") and not os.path.isfile(plan["bgm"]["path"]):
+        problems.append(f"BGM がありません: {plan['bgm']['path']}")
     return problems
 
 

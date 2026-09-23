@@ -18,7 +18,7 @@ def to_frames(starts, audio_duration, fps):
     return [(f, frames[i + 1] if i + 1 < len(frames) else total) for i, f in enumerate(frames)], total
 
 
-def build_plan(check, timings, audio_duration, config, match_ratio=None, fake=False):
+def build_plan(check, timings, audio_duration, config, match_ratio=None, fake=False, bgm_duration=None):
     """check: core.checks.ProjectCheck、timings: core.align.SectionTiming のリスト（entries と同じ順）
 
     戻り値: (plan 辞書, エラー, 警告)
@@ -94,12 +94,23 @@ def build_plan(check, timings, audio_duration, config, match_ratio=None, fake=Fa
         "sizing": config["sizing"],
         "audio": {"path": os.path.abspath(check.audio), "duration_sec": round(audio_duration, 3), "frames": total},
         "total_frames": total,
+        "bgm": _bgm(check, bgm_duration, fps, total, warnings),
         "sections": sections,
         "fake_align": fake,
         # エラーがある配置表はフェーズ4で使わない
         "errors": errors,
     }
     return plan, errors, warnings
+
+
+def _bgm(check, duration, fps, total, warnings):
+    """BGM（任意）：A2 に0フレームから、ナレーションの終わりまで（BGM が短ければ BGM の終わりまで）"""
+    if not check.bgm or duration is None:
+        return None
+    frames = min(total, math.floor(duration * fps + 1e-6))
+    if frames < total:
+        warnings.append(f"BGM（{duration:.1f}秒）がナレーションより短いため、途中で終わります（繰り返しはしません）")
+    return {"path": os.path.abspath(check.bgm), "duration_sec": round(duration, 3), "frames": frames}
 
 
 def report_rows(plan):

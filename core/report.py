@@ -25,6 +25,8 @@ def build_report(check, rows=None):
            f"作成: {datetime.now():%Y-%m-%d %H:%M}", ""]
     if check.audio:
         out += [f"ナレーション: `{os.path.basename(check.audio)}`", ""]
+    if getattr(check, "bgm", None):
+        out += [f"BGM: `{os.path.basename(check.bgm)}`", ""]
 
     out += [f"## エラー（{len(check.errors)}件）", ""]
     out += [f"- {e}" for e in check.errors] or ["なし"]

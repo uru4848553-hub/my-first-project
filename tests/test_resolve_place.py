@@ -140,7 +140,7 @@ class FakeMediaPool:
         for info in infos:
             self.appends.append(info)
             item = info["mediaPoolItem"]
-            if info.get("mediaType") == 2:
+            if info.get("mediaType") == 2 and "endFrame" not in info:
                 if self.project.audio_needs_mono and info["trackIndex"] == 1:
                     continue
                 duration = item.frames
@@ -322,6 +322,43 @@ class PlaceTest(unittest.TestCase):
         self.assertEqual([t.track for t in project.current.items if t.media_type == 2], [2])
         self.assertTrue(any("A2" in w for w in warnings))
 
+    def add_bgm(self, frames=120):
+        path = os.path.join(self.dir, "bgm", "bgm.mp3")
+        os.makedirs(os.path.dirname(path))
+        open(path, "wb").close()
+        self.plan["bgm"] = {"path": path, "duration_sec": frames / 30, "frames": frames}
+        return path
+
+    def test_bgm_on_a2(self):
+        self.add_bgm(120)
+        project = FakeProject()
+        _, warnings = self.run_place(project)
+        self.assertEqual(warnings, [])
+        audio = [(t.track, t.start - START, t.duration) for t in project.current.items if t.media_type == 2]
+        self.assertEqual(audio, [(1, 0, 150), (2, 0, 120)])
+        self.assertEqual(project.current.audio_tracks, 2)
+        self.assertEqual(len(project.pool.imports), len(self.paths) + 1)
+
+    def test_bgm_after_mono_narration_track(self):
+        self.add_bgm(150)
+        project = FakeProject()
+        project.audio_needs_mono = True
+        self.run_place(project)
+        self.assertEqual([t.track for t in project.current.items if t.media_type == 2], [2, 3])
+
+    def test_bgm_failure_is_only_a_warning(self):
+        self.add_bgm(150)
+        project = FakeProject()
+        orig = project.pool.AppendToTimeline
+        project.pool.AppendToTimeline = lambda infos: [] if infos[0]["mediaPoolItem"].path.endswith("bgm.mp3") else orig(infos)
+        name, warnings = self.run_place(project)
+        self.assertTrue(name)
+        self.assertTrue(any("BGM を A2 に置けませんでした" in w for w in warnings), warnings)
+
+    def test_missing_bgm_file(self):
+        os.remove(self.add_bgm())
+        self.assertTrue(any("BGM がありません" in p for p in check_plan(self.plan)))
+
     def patch_duration(self, project, suffix, duration):
         orig = project.pool.AppendToTimeline
 
@@ -367,3 +404,65 @@ class PlaceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeProjectManager:
+    def __init__(self, current, existing=()):
+        self.current, self.existing, self.saved, self.created = current, set(existing), 0, []
+
+    def GetCurrentProject(self):
+        return self.current
+
+    def SaveProject(self):
+        self.saved += 1
+        return True
+
+    def LoadProject(self, name):
+        if name not in self.existing:
+            return None
+        self.current = NamedProject(name)
+        return self.current
+
+    def CreateProject(self, name):
+        self.created.append(name)
+        self.current = NamedProject(name)
+        return self.current
+
+
+class NamedProject:
+    def __init__(self, name):
+        self.name = name
+
+    def GetName(self):
+        return self.name
+
+
+class OpenProjectTest(unittest.TestCase):
+    def open(self, pm, name):
+        from resolve_connect import open_project
+
+        class R:
+            def GetProjectManager(self):
+                return pm
+        return open_project(R(), name, log=lambda m: None)
+
+    def test_blank_name_uses_current(self):
+        pm = FakeProjectManager(NamedProject("Short-Auto0923"))
+        self.assertEqual(self.open(pm, "").GetName(), "Short-Auto0923")
+
+    def test_already_open(self):
+        pm = FakeProjectManager(NamedProject("自動編集"))
+        self.assertEqual(self.open(pm, "自動編集").GetName(), "自動編集")
+        self.assertEqual(pm.saved, 0)
+
+    def test_switch_saves_current_and_loads(self):
+        pm = FakeProjectManager(NamedProject("Short-Auto0923"), existing={"自動編集"})
+        self.assertEqual(self.open(pm, "自動編集").GetName(), "自動編集")
+        self.assertEqual(pm.saved, 1)
+        self.assertEqual(pm.created, [])
+
+    def test_create_when_missing(self):
+        pm = FakeProjectManager(NamedProject("Untitled Project"))
+        self.assertEqual(self.open(pm, "自動編集").GetName(), "自動編集")
+        self.assertEqual(pm.saved, 0)   # 名前のないプロジェクトは保存しない
+        self.assertEqual(pm.created, ["自動編集"])

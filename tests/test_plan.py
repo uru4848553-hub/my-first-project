@@ -118,6 +118,19 @@ class BuildPlanTest(unittest.TestCase):
         _, errors, _ = self.build(timings(0.0, 4.0, 6.5, 13.0))
         self.assertTrue(any("音声の長さ" in e for e in errors), errors)
 
+    def test_bgm(self):
+        self.assertIsNone(self.build(timings(0.0, 4.0, 6.5, 9.0))[0]["bgm"])
+        bgm = os.path.join(self.dir, "bgm", "bgm.mp3")
+        os.makedirs(os.path.dirname(bgm))
+        open(bgm, "wb").close()
+        self.check = check_project(self.dir)
+        plan, _, warnings = build_plan(self.check, timings(0.0, 4.0, 6.5, 9.0), 12.0, self.config, 1.0, bgm_duration=60.0)
+        self.assertEqual(plan["bgm"]["frames"], 360)   # ナレーションの終わりまで
+        self.assertEqual(warnings, [])
+        plan, _, warnings = build_plan(self.check, timings(0.0, 4.0, 6.5, 9.0), 12.0, self.config, 1.0, bgm_duration=5.0)
+        self.assertEqual(plan["bgm"]["frames"], 150)
+        self.assertTrue(any("BGM" in w and "短い" in w for w in warnings))
+
     def test_write_plan_and_report(self):
         plan, _, _ = self.build(timings(0.0, 4.0, 6.5, 9.0))
         path = write_plan(plan, self.dir)

@@ -6,6 +6,8 @@
     run.bat autoedit.py "D:\\動画\\動画_AI副業の始め方" --no-resolve   # plan.json まで作り、Resolve には置かない
     run.bat autoedit.py "D:\\動画\\動画_AI副業の始め方" --from-plan    # 前回の output/plan.json を使って Resolve に置くだけ
     run.bat autoedit.py "D:\\動画\\動画_AI副業の始め方" --fake-align   # Whisper を使わず文字数で時間を割り振る（配置のテスト用）
+    run.bat autoedit.py "D:\\動画\\動画_AI副業の始め方" --launch-resolve --project 自動編集
+        # Resolve が起動していなければ起動し、プロジェクト「自動編集」を開いて（なければ作って）置く
 
 結果は output/report.md・output/plan.json に出力する。
 """
@@ -73,6 +75,16 @@ def build(folder, config, fake_align=False):
         print_messages(check)
         return None
     print(f"ナレーション: {os.path.basename(check.audio)}（{duration:.1f}秒）")
+    bgm_duration = None
+    if check.bgm:
+        try:
+            bgm_duration = probe_duration(check.bgm)
+        except FFmpegError as e:
+            check.errors.append(f"BGM を読めません: {e}")
+            write_report(check)
+            print_messages(check)
+            return None
+        print(f"BGM: {os.path.basename(check.bgm)}（{bgm_duration:.1f}秒）")
 
     sections = [e.section for e in check.entries]
     started = time.time()
@@ -94,7 +106,8 @@ def build(folder, config, fake_align=False):
         return None
     print(f"アライメント完了（{time.time() - started:.0f}秒）")
 
-    plan, plan_errors, plan_warnings = build_plan(check, timings, duration, config, ratio, fake=fake_align)
+    plan, plan_errors, plan_warnings = build_plan(check, timings, duration, config, ratio, fake=fake_align,
+                                                   bgm_duration=bgm_duration)
     check.errors.extend(plan_errors)
     check.warnings.extend(plan_warnings)
 
@@ -131,14 +144,19 @@ def load_plan(folder):
         return json.load(fp)
 
 
-def place_in_resolve(plan, folder):
-    """フェーズ4：Resolve への配置。終了コードを返す"""
+def place_in_resolve(plan, folder, launch=False, project=None):
+    """フェーズ4：Resolve への配置。終了コードを返す
+
+    launch: Resolve が起動していなければ起動する
+    project: このプロジェクトを開いて（なければ作って）置く。None なら今開いているプロジェクト
+    """
     from core.resolve_place import PlaceError, place
-    from resolve_connect import ResolveConnectionError, get_resolve
+    from resolve_connect import ResolveConnectionError, ensure_resolve, open_project
 
     print("\nResolve に配置中...")
     try:
-        resolve = get_resolve()
+        resolve, _ = ensure_resolve(launch=launch)
+        open_project(resolve, project)
         name, warnings = place(resolve, plan)
     except (ResolveConnectionError, PlaceError) as e:
         print(f"[エラー] Resolve への配置に失敗しました: {e}")
@@ -166,13 +184,15 @@ def main(argv=None):
     mode.add_argument("--check-only", action="store_true", help="台本と素材のチェックだけ行う（音声処理なし）")
     mode.add_argument("--no-resolve", action="store_true", help="plan.json まで作り、Resolve には置かない")
     mode.add_argument("--from-plan", action="store_true", help="前回の output/plan.json を使って Resolve に置くだけ")
+    parser.add_argument("--launch-resolve", action="store_true", help="Resolve が起動していなければ起動する")
+    parser.add_argument("--project", help="Resolve のこのプロジェクトに置く（なければ作る）。省略時は今開いているプロジェクト")
     args = parser.parse_args(argv)
 
     if args.check_only:
         return check_only(args.folder)
     if args.from_plan:
         plan = load_plan(args.folder)
-        return 1 if plan is None else place_in_resolve(plan, args.folder)
+        return 1 if plan is None else place_in_resolve(plan, args.folder, args.launch_resolve, args.project)
 
     try:
         config = load_config()
@@ -186,7 +206,7 @@ def main(argv=None):
     if args.no_resolve:
         print("\n（--no-resolve のため Resolve には配置していません）")
         return 0
-    return place_in_resolve(plan, args.folder)
+    return place_in_resolve(plan, args.folder, args.launch_resolve, args.project)
 
 
 if __name__ == "__main__":

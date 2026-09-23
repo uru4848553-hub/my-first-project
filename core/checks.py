@@ -2,7 +2,7 @@
 import os
 from dataclasses import dataclass, field
 
-from core.media import find_audio, scan_media
+from core.media import find_audio, find_bgm, scan_media
 from core.script import parse_script
 
 
@@ -19,6 +19,7 @@ class ProjectCheck:
     scenes: list = field(default_factory=list)
     entries: list = field(default_factory=list)
     audio: str | None = None
+    bgm: str | None = None
     errors: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
 
@@ -114,6 +115,9 @@ def check_project(folder):
 
     result.audio, audio_errors = find_audio(os.path.join(folder, "audio"))
     result.errors.extend(audio_errors)
+
+    result.bgm, bgm_errors = find_bgm(os.path.join(folder, "bgm"))
+    result.errors.extend(bgm_errors)
 
     # 台本か素材の読み取りでエラーがあると照合結果が紛らわしくなるので、その場合は照合しない
     if script is not None and not script.errors and not media_errors:

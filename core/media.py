@@ -90,3 +90,13 @@ def find_audio(audio_dir):
     if len(found) > 1:
         return None, [f"audio フォルダの音声ファイルは1本だけにしてください（{', '.join(found)}）"]
     return os.path.join(audio_dir, found[0]), []
+
+
+def find_bgm(bgm_dir):
+    """bgm/ の音楽ファイル（なくてもよい）を探し、(パス or None, エラー) を返す。"""
+    if not os.path.isdir(bgm_dir):
+        return None, []
+    found = [n for n in _list_files(bgm_dir) if os.path.splitext(n)[1][1:].lower() in AUDIO_EXTS]
+    if len(found) > 1:
+        return None, [f"bgm フォルダの音楽ファイルは1本だけにしてください（{', '.join(found)}）"]
+    return (os.path.join(bgm_dir, found[0]) if found else None), []
