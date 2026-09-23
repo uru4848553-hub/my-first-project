@@ -1,0 +1,3 @@
+# CUDA版 PyTorch は setup.ps1 が先に専用インデックスからインストールする
+# （ここに torch を書くと CPU版が入る場合があるため記載しない）
+stable-ts
