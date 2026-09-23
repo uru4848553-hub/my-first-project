@@ -100,15 +100,13 @@ class FFmpegTest(unittest.TestCase):
         image = os.path.join(media, "S03_still.png")
         make_video(short, ["red", "green"], [0.5, 0.5])      # 1秒
         make_video(long_, ["red"], [5])                       # 5秒
-        open(image, "wb").close()
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=c=magenta:s=101x75,format=rgb24",
+                        "-frames:v", "1", image], check=True)   # 奇数サイズの画像
         plan = {"fps": 30, "errors": [], "sections": [
-            section("video", 0, 105, short),     # 3.5秒 → 動画1秒＋静止2.5秒（警告）
-            section("video", 105, 60, long_),    # 2秒 → 動画を2秒で切る
-            section("image", 165, 45, image),
+            dict(section("video", 0, 105, short), label="S01"),     # 3.5秒 → 動画1秒＋静止2.5秒（警告）
+            dict(section("video", 105, 60, long_), label="S02"),    # 2秒 → 動画を2秒で切る
+            dict(section("image", 165, 45, image), label="S03"),
         ]}
-        plan["sections"][0]["label"] = "S01"
-        plan["sections"][1]["label"] = "S02"
-        plan["sections"][2]["label"] = "S03"
 
         errors, warnings = apply_fit(plan, log=lambda m: None)
         self.assertEqual(errors, [])
@@ -116,10 +114,16 @@ class FFmpegTest(unittest.TestCase):
 
         self.assertEqual([(c["type"], c["record_frame"], c["frames"]) for c in s1["clips"]],
                          [("video", 0, 30), ("freeze", 30, 75)])
-        freeze_png = s1["clips"][1]["path"]
-        self.assertEqual(os.path.dirname(freeze_png), os.path.join(media, "_freeze"))
-        self.assertRegex(os.path.basename(freeze_png), r"^S01_short_last_[0-9a-f]{8}\.png$")
-        self.assertGreater(pixel(freeze_png)[1], 100)   # 最終フレーム＝緑
+        freeze = s1["clips"][1]
+        # 最終フレームの PNG と、それを 75フレーム続けた動画
+        self.assertEqual(os.path.dirname(freeze["image"]), os.path.join(media, "_freeze"))
+        self.assertRegex(os.path.basename(freeze["image"]), r"^S01_short_last_[0-9a-f]{8}\.png$")
+        self.assertGreater(pixel(freeze["image"])[1], 100)   # 最終フレーム＝緑
+        self.assertRegex(os.path.basename(freeze["path"]), r"^S01_short_last_[0-9a-f]{8}_75f\.mp4$")
+        info = probe_video(freeze["path"])
+        self.assertAlmostEqual(info["duration"] * 30, 75, delta=0.5)
+        self.assertEqual(info["fps"], 30.0)
+        self.assertGreater(pixel(freeze["path"])[1], 100)
         self.assertEqual(s1["freeze_frames"], 75)
         self.assertEqual(warnings, ["S01: 静止フレームで埋めた尺が2.5秒（素材不足の可能性）"])
         self.assertEqual(s1["warnings"], ["静止フレームで埋めた尺が2.5秒（素材不足の可能性）"])
@@ -128,23 +132,49 @@ class FFmpegTest(unittest.TestCase):
         self.assertEqual([(c["type"], c["frames"], c["source_out_sec"]) for c in s2["clips"]], [("video", 60, 2.0)])
         self.assertEqual(s2["freeze_frames"], 0)
         # 足りている動画の静止画は作らない。作業用の一時ファイルも残らない
-        self.assertEqual(os.listdir(os.path.join(media, "_freeze")), [os.path.basename(freeze_png)])
+        self.assertEqual(sorted(os.listdir(os.path.join(media, "_freeze"))),
+                         sorted([os.path.basename(freeze["image"]), os.path.basename(freeze["path"])]))
 
-        self.assertEqual(s3["clips"], [{"type": "image", "path": image, "record_frame": 165, "frames": 45}])
+        # 素材の画像は media/_stills/ に 45フレームの動画として作る。奇数サイズは偶数にする
+        clip = s3["clips"][0]
+        self.assertEqual((clip["type"], clip["record_frame"], clip["frames"], clip["image"]), ("image", 165, 45, image))
+        self.assertEqual(os.path.dirname(clip["path"]), os.path.join(media, "_stills"))
+        info = probe_video(clip["path"])
+        self.assertAlmostEqual(info["duration"] * 30, 45, delta=0.5)
+        self.assertEqual((info["width"], info["height"]), (102, 76))
+        r, g, b = pixel(clip["path"])
+        self.assertGreater(r, 200)
+        self.assertGreater(b, 200)
+        self.assertLess(g, 60)
 
-        # 同じ動画で再実行すると同じファイルを使う
-        again = {"fps": 30, "errors": [], "sections": [dict(section("video", 0, 105, short), label="S01")]}
+        # 同じ素材・同じ長さで再実行すると、同じファイルを使い回す（作り直さない）
+        mtime = os.path.getmtime(clip["path"])
+        again = {"fps": 30, "errors": [], "sections": [dict(section("video", 0, 105, short), label="S01"),
+                                                       dict(section("image", 165, 45, image), label="S03")]}
         apply_fit(again, log=lambda m: None)
-        self.assertEqual(again["sections"][0]["clips"][1]["path"], freeze_png)
+        self.assertEqual(again["sections"][0]["clips"][1]["path"], freeze["path"])
+        self.assertEqual(again["sections"][1]["clips"][0]["path"], clip["path"])
+        self.assertEqual(os.path.getmtime(clip["path"]), mtime)
 
         # 動画を差し替えると別名の新しい静止画になり、古い静止画は上書きしない
         make_video(short, ["red", "blue"], [0.5, 0.5])
         again = {"fps": 30, "errors": [], "sections": [dict(section("video", 0, 105, short), label="S01")]}
         apply_fit(again, log=lambda m: None)
-        new_png = again["sections"][0]["clips"][1]["path"]
-        self.assertNotEqual(new_png, freeze_png)
-        self.assertGreater(pixel(new_png)[2], 200)      # 青
-        self.assertGreater(pixel(freeze_png)[1], 100)   # 古い方は緑のまま
+        new = again["sections"][0]["clips"][1]
+        self.assertNotEqual(new["image"], freeze["image"])
+        self.assertNotEqual(new["path"], freeze["path"])
+        self.assertGreater(pixel(new["path"])[2], 200)        # 青
+        self.assertGreater(pixel(freeze["path"])[1], 100)     # 古い方は緑のまま
+
+    def test_broken_image_is_error(self):
+        image = os.path.join(self.dir, "S01_broken.png")
+        with open(image, "wb") as f:
+            f.write(b"not an image")
+        plan = {"fps": 30, "errors": [], "sections": [section("image", 0, 60, image)]}
+        errors, _ = apply_fit(plan, log=lambda m: None)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("静止画を動画にできません", errors[0])
+        self.assertNotIn("clips", plan["sections"][0])
 
     def test_broken_video_is_error(self):
         path = os.path.join(self.dir, "S01_broken.mp4")

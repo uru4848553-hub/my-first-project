@@ -4,14 +4,19 @@ plan.json の各セクションに、タイムラインへ置くクリップの�
 - 静止画：セクション尺そのまま
 - 動画がセクションより長い：素材の先頭から使い、セクション尺で切る
 - 動画がセクションより短い：動画の直後に最終フレームの静止画（media/_freeze/ に PNG で書き出す）を置いて埋める
+
+静止画（素材の画像・最終フレームの PNG）は、その画像が必要な尺だけ続く動画（mp4）にしてから置く。
+Resolve は静止画を AppendToTimeline で置くと endFrame を無視して既定の長さ（5秒）で置くため（実機で確認）。
+元の画像は clip の "image"、置く動画は "path" に入る。
 """
 import hashlib
 import math
 import os
 
-from core.ffmpeg import FFmpegError, extract_last_frame, probe_video
+from core.ffmpeg import FFmpegError, extract_last_frame, probe_video, still_to_video
 
 FREEZE_DIR = "_freeze"
+STILLS_DIR = "_stills"
 LONG_FREEZE_SEC = 2.0
 
 
@@ -67,6 +72,34 @@ def _ensure_freeze(video_path, log):
     return dst
 
 
+def _file_hash(path):
+    with open(path, "rb") as fp:
+        return hashlib.sha1(fp.read()).hexdigest()[:8]
+
+
+def still_video_path(image_path, frames):
+    """静止画を動画にしたファイルの置き場所。素材の画像は media/_stills/、最終フレームは media/_freeze/ に並べる。
+    名前に画像の内容のハッシュと長さを入れ、同じ画像・同じ長さなら使い回す。"""
+    folder, name = os.path.split(image_path)
+    stem = os.path.splitext(name)[0]
+    if os.path.basename(folder) == FREEZE_DIR:
+        # 最終フレームの PNG は名前にすでに内容のハッシュが入っている
+        return os.path.join(folder, f"{stem}_{frames}f.mp4")
+    return os.path.join(folder, STILLS_DIR, f"{stem}_{_file_hash(image_path)}_{frames}f.mp4")
+
+
+def _ensure_still_video(image_path, frames, fps, log):
+    dst = still_video_path(image_path, frames)
+    if os.path.isfile(dst) and os.path.getsize(dst) > 0:
+        return dst
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    tmp = dst[:-4] + ".tmp.mp4"
+    still_to_video(image_path, tmp, frames, fps)
+    os.replace(tmp, dst)
+    log(f"静止画を動画にしました: {os.path.basename(image_path)} → {os.path.basename(dst)}")
+    return dst
+
+
 def apply_fit(plan, log=print):
     """plan の各セクションに clips を付ける（plan を直接書き換える）。戻り値: (エラー, 警告)"""
     fps = plan["fps"]
@@ -100,6 +133,14 @@ def apply_fit(plan, log=print):
                     continue
 
         clips, freeze = section_clips(sec, fps, available, freeze_path)
+        try:
+            for clip in clips:
+                if clip["type"] != "video":
+                    clip["image"] = clip["path"]
+                    clip["path"] = _ensure_still_video(clip["image"], clip["frames"], fps, log)
+        except FFmpegError as e:
+            errors.append(f"{sec['label']}: 静止画を動画にできません（{os.path.basename(clip['image'])}）: {e}")
+            continue
         sec["clips"] = clips
         sec["freeze_frames"] = freeze
         if freeze / fps >= LONG_FREEZE_SEC:

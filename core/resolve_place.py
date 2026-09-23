@@ -84,7 +84,6 @@ class Placer:
                 existing[_norm(path)] = clip
 
         items = {}
-        self.newly_imported = set()
         for path in paths:
             key = _norm(path)
             if key in items:
@@ -99,12 +98,7 @@ class Placer:
             if not imported:
                 raise PlaceError(f"メディアプールに取り込めません: {path}")
             items[key] = imported[0]
-            self.newly_imported.add(key)
             self.log(f"取り込み: {os.path.basename(path)}")
-
-        stills = {_norm(c["path"]): c["path"] for s in self.plan["sections"] for c in s["clips"] if c["type"] != "video"}
-        for key, path in stills.items():
-            self._prepare_still(items[key], path, key in self.newly_imported)
         return items
 
     def _create_timeline(self, name):
@@ -161,17 +155,6 @@ class Placer:
         items = self.media_pool.AppendToTimeline([info])
         return items[0] if items else None
 
-    def _prepare_still(self, item, path, newly_imported):
-        """静止画は取り込んだ時点のプロジェクトのフレームレートと、既定の長さ（通常5秒）を持つ。
-        今回取り込んだものはフレームレートをタイムラインに合わせる（既存タイムラインで使っているかもしれない
-        取り込み済みのものは変えない）。調査用に状態を表示する。"""
-        before = item.GetClipProperty("FPS")
-        if newly_imported and _float(before) not in (None, float(self.fps)):
-            item.SetClipProperty("FPS", str(self.fps))
-        after = item.GetClipProperty("FPS")
-        change = f"{before} → {after}" if after != before else f"{after}"
-        self.log(f"  静止画 {os.path.basename(path)}: FPS {change}、長さ {item.GetClipProperty('Frames')} フレーム")
-
     def _append_range(self, item, pos, src_frames, expected):
         """素材の先頭から src_frames フレームを pos に置く。最初の1本で endFrame の意味を確かめる。"""
         info = {"mediaPoolItem": item, "startFrame": 0, "trackIndex": 1, "mediaType": 1,
@@ -189,30 +172,20 @@ class Placer:
         return placed
 
     def _place_clip(self, sec, clip, item):
-        """クリップを置く。静止画が素材の長さの上限で切られたら、同じ画像を続けて並べて埋める。"""
-        label = f"{sec['label']}（{os.path.basename(clip['path'])}）"
-        still = clip["type"] != "video"
+        """クリップを置く（静止画もフェーズ3で動画にしてあるので、すべて動画として扱う）"""
+        label = f"{sec['label']}（{os.path.basename(clip.get('image') or clip['path'])}）"
         src_fps = _float(item.GetClipProperty("FPS")) or self.fps
-        pos, remaining, pieces = clip["record_frame"], clip["frames"], 0
-        while remaining > 0:
-            src = max(1, round(remaining * src_fps / self.fps))
-            placed = self._append_range(item, pos, src, remaining)
-            if placed is None:
-                raise PlaceError(f"{label} をタイムラインに置けません")
-            got = placed.GetDuration()
-            if placed.GetStart() != self.start + pos or got <= 0 or got > remaining + 1 or \
-                    (not still and got < remaining - 1):
-                raise PlaceError(
-                    f"{label} の位置・長さが配置表と違います（予定: {pos}から{remaining}フレーム、"
-                    f"実際: {placed.GetStart() - self.start}から{got}フレーム。素材の FPS {item.GetClipProperty('FPS')}、"
-                    f"長さ {item.GetClipProperty('Frames')} フレーム、渡した endFrame {src}）")
-            pos, remaining, pieces = pos + got, remaining - got, pieces + 1
-            if not still or pieces >= 500:
-                break
-        if remaining > 1:
-            raise PlaceError(f"{label} を最後まで置けませんでした（残り {remaining} フレーム）")
-        if pieces > 1:
-            self.log(f"  {label}: 静止画の長さの上限のため、同じ画像を {pieces} 本に分けて並べました")
+        pos, frames = clip["record_frame"], clip["frames"]
+        src = max(1, round(frames * src_fps / self.fps))
+        placed = self._append_range(item, pos, src, frames)
+        if placed is None:
+            raise PlaceError(f"{label} をタイムラインに置けません")
+        got = placed.GetDuration()
+        if placed.GetStart() != self.start + pos or abs(got - frames) > 1:
+            raise PlaceError(
+                f"{label} の位置・長さが配置表と違います（予定: {pos}から{frames}フレーム、"
+                f"実際: {placed.GetStart() - self.start}から{got}フレーム。素材の FPS {item.GetClipProperty('FPS')}、"
+                f"長さ {item.GetClipProperty('Frames')} フレーム、渡した endFrame {src}）")
 
     def _place_narration(self, item):
         info = {"mediaPoolItem": item, "trackIndex": 1, "mediaType": 2, "recordFrame": self.start}

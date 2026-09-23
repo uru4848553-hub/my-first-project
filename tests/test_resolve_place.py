@@ -14,24 +14,15 @@ from core.resolve_place import PlaceError, check_plan, place
 START = 108000   # 30fps で 01:00:00:00
 
 
-STILL_EXTS = (".png", ".jpg", ".jpeg")
-
-
 class FakeItem:
-    """still=True の静止画は、実機と同じく取り込み時のプロジェクトの fps と既定の長さ（5秒）を持ち、
-    それより長く置こうとしても5秒で切られる"""
+    # 静止画はフェーズ3で動画にしてから置くので、ここでは動画・音声だけをまねる
+    # （実機の Resolve 21 は、静止画を AppendToTimeline で置くと endFrame を無視して既定の5秒で置く）
 
-    def __init__(self, path, fps=30.0, frames=150, still=False, fps_settable=True):
-        self.path, self.fps, self.frames, self.still, self.fps_settable = path, fps, frames, still, fps_settable
+    def __init__(self, path, fps=30.0, frames=150):
+        self.path, self.fps, self.frames = path, fps, frames
 
     def GetClipProperty(self, key):
         return {"File Path": self.path, "FPS": f"{self.fps:g}", "Frames": str(self.frames)}.get(key)
-
-    def SetClipProperty(self, key, value):
-        if key == "FPS" and self.fps_settable:
-            self.fps = float(value)
-            return True
-        return False
 
 
 class FakeFolder:
@@ -127,15 +118,7 @@ class FakeMediaPool:
 
     def ImportMedia(self, paths):
         self.imports.append(list(paths))
-        items = []
-        for p in paths:
-            ext = os.path.splitext(p)[1]
-            if ext in STILL_EXTS:
-                fps = float(self.project.settings["timelineFrameRate"])
-                items.append(FakeItem(p, fps, frames=round(5 * fps), still=True,
-                                      fps_settable=self.project.still_fps_settable))
-            else:
-                items.append(FakeItem(p, self.src_fps.get(ext, 30.0)))
+        items = [FakeItem(p, self.src_fps.get(os.path.splitext(p)[1], 30.0)) for p in paths]
         self.current.clips.extend(items)
         return items
 
@@ -163,8 +146,6 @@ class FakeMediaPool:
                 duration = item.frames
             else:
                 src = info["endFrame"] - info["startFrame"] + (1 if self.end_inclusive else 0)
-                if item.still:
-                    src = min(src, item.frames)   # 静止画は既定の長さまで
                 duration = round(src * float(tl.settings["timelineFrameRate"]) / item.fps)
             ti = FakeTimelineItem(item, info["recordFrame"], duration, info["trackIndex"], info.get("mediaType"))
             tl.items.append(ti)
@@ -177,7 +158,6 @@ class FakeProject:
         self.settings = {"timelineFrameRate": fps}
         self.timeline_fps_settable = timeline_fps_settable
         self.audio_needs_mono = False
-        self.still_fps_settable = True
         self.timelines = []
         self.current = None
         self.pool = FakeMediaPool(self, end_inclusive)
@@ -227,9 +207,10 @@ class PlaceTest(unittest.TestCase):
             open(path, "wb").close()
             return path
 
-        v1, img, v3, freeze, img2, audio = (f("media/S01_a.mp4"), f("media/S02_b.png"), f("media/S03a_c.mov"),
-                                            f("media/_freeze/S03a_c_last_1234abcd.png"), f("media/S03b_d.jpg"),
-                                            f("audio/narration.wav"))
+        # 静止画はフェーズ3で動画（mp4）にしてある。元の画像は "image"
+        v1, img, v3, freeze, img2, audio = (f("media/S01_a.mp4"), f("media/_stills/S02_b_abcd1234_30f.mp4"),
+                                            f("media/S03a_c.mov"), f("media/_freeze/S03a_c_last_1234abcd_30f.mp4"),
+                                            f("media/_stills/S03b_d_5678ef90_30f.mp4"), f("audio/narration.wav"))
         self.paths = [v1, img, v3, freeze, img2, audio]
 
         def sec(label, scene, start, frames, clips, marker=None):
@@ -242,12 +223,13 @@ class PlaceTest(unittest.TestCase):
             "sections": [
                 sec("S01", "S01", 0, 40, [{"type": "video", "path": v1, "record_frame": 0, "frames": 40}],
                     {"name": "S01", "note": "こんにちは"}),
-                sec("S02", "S02", 40, 30, [{"type": "image", "path": img, "record_frame": 40, "frames": 30}],
+                sec("S02", "S02", 40, 30, [{"type": "image", "path": img, "image": "S02_b.png", "record_frame": 40, "frames": 30}],
                     {"name": "S02", "note": "まず結論から"}),
                 sec("S03[a]", "S03", 70, 50, [{"type": "video", "path": v3, "record_frame": 70, "frames": 20},
-                                               {"type": "freeze", "path": freeze, "record_frame": 90, "frames": 30}],
+                                               {"type": "freeze", "path": freeze, "image": "S03a_c_last_1234abcd.png",
+                                                "record_frame": 90, "frames": 30}],
                     {"name": "S03", "note": "画面を見て"}),
-                sec("S03[b]", "S03", 120, 30, [{"type": "image", "path": img2, "record_frame": 120, "frames": 30}]),
+                sec("S03[b]", "S03", 120, 30, [{"type": "image", "path": img2, "image": "S03b_d.jpg", "record_frame": 120, "frames": 30}]),
             ],
         }
 
@@ -340,44 +322,6 @@ class PlaceTest(unittest.TestCase):
         self.assertEqual([t.track for t in project.current.items if t.media_type == 2], [2])
         self.assertTrue(any("A2" in w for w in warnings))
 
-    def test_still_fps_not_settable(self):
-        # 実機で起きたこと：静止画が 24fps・5秒のまま → 素材側のフレーム数に直して渡す
-        project = FakeProject()
-        project.still_fps_settable = False
-        self.run_place(project)
-        self.assertEqual(self.video_items(project), [(0, 40), (40, 30), (70, 20), (90, 30), (120, 30)])
-        s02 = [a for a in project.pool.appends if a["mediaPoolItem"].path.endswith("S02_b.png")][0]
-        self.assertEqual(s02["endFrame"], 24)   # 30フレーム（30fps）＝ 24フレーム（24fps）
-
-    def test_still_fps_is_set_to_timeline(self):
-        project = FakeProject()
-        self.run_place(project)
-        stills = [c for c in project.pool.root.subs[0].clips if c.still]
-        self.assertEqual({c.fps for c in stills}, {30.0})
-
-    def test_long_still_is_split(self):
-        # 5秒（静止画の上限）を超える静止画は、同じ画像を続けて並べる
-        project = FakeProject()
-        project.still_fps_settable = False
-        self.plan["sections"][3]["clips"][0]["frames"] = 400
-        self.plan["sections"][3]["duration_frames"] = 400
-        messages = []
-        place(FakeResolve(project), self.plan, log=messages.append, now=NOW)
-        self.assertEqual(self.video_items(project)[4:], [(120, 150), (270, 150), (420, 100)])
-        self.assertTrue(any("3 本に分けて" in m for m in messages))
-
-    def test_reused_still_fps_is_not_changed(self):
-        # 取り込み済みの静止画（既存タイムラインで使っているかもしれない）の fps は変えない
-        project = FakeProject()
-        project.still_fps_settable = False
-        self.run_place(project)
-        project.still_fps_settable = True
-        for c in project.pool.root.subs[0].clips:
-            c.fps_settable = True
-        self.run_place(project)
-        self.assertEqual({c.fps for c in project.pool.root.subs[0].clips if c.still}, {24.0})
-        self.assertEqual(self.video_items(project), [(0, 40), (40, 30), (70, 20), (90, 30), (120, 30)])
-
     def patch_duration(self, project, suffix, duration):
         orig = project.pool.AppendToTimeline
 
@@ -391,11 +335,11 @@ class PlaceTest(unittest.TestCase):
 
     def test_too_long_is_error(self):
         project = FakeProject()
-        self.patch_duration(project, "_1234abcd.png", 200)   # 静止画が予定（30フレーム）より長く置かれた
+        self.patch_duration(project, "_30f.mp4", 200)   # 静止画の動画が予定（30フレーム）より長く置かれた
         with self.assertRaises(PlaceError) as cm:
             self.run_place(project)
-        self.assertIn("S03[a]", str(cm.exception))
-        self.assertIn("実際: 90から200フレーム", str(cm.exception))
+        self.assertIn("S02（S02_b.png）", str(cm.exception))
+        self.assertIn("実際: 40から200フレーム", str(cm.exception))
         self.assertIn("素材の FPS 30", str(cm.exception))
 
     def test_short_video_is_error(self):
