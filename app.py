@@ -367,7 +367,7 @@ class App:
             self._post("folder", folder)
             self._post("log", f"動画フォルダ: {folder}")
             self._post("status", "処理中（読み上げとシーンの対応をとっています。数分かかります）...")
-            cmd = [sys.executable, "-u", os.path.join(ROOT, "autoedit.py"), folder]
+            cmd = [child_python(), "-u", os.path.join(ROOT, "autoedit.py"), folder]
             if job["project"]:
                 cmd += ["--project", job["project"]]
             if job["launch"]:
@@ -459,9 +459,46 @@ def _open(path):
         subprocess.Popen(["xdg-open", path])
 
 
+def child_python():
+    """pythonw.exe で起動したときも、autoedit.py は python.exe で動かす（画面は CREATE_NO_WINDOW で出ない）"""
+    exe = sys.executable
+    if os.path.basename(exe).lower() == "pythonw.exe":
+        console = os.path.join(os.path.dirname(exe), "python.exe")
+        if os.path.exists(console):
+            return console
+    return exe
+
+
+APP_ID = "AutoDavinch.ResolveAutoPlacer"
+ICON_ICO = os.path.join(ROOT, "assets", "app.ico")
+ICON_PNG = os.path.join(ROOT, "assets", "app.png")
+
+
+def set_app_id():
+    """タスクバーで python のアイコンではなく、このアプリのアイコンを出す"""
+    if os.name == "nt":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+        except (AttributeError, OSError):
+            pass
+
+
+def set_icon(root):
+    try:
+        if os.name == "nt" and os.path.exists(ICON_ICO):
+            root.iconbitmap(default=ICON_ICO)
+        elif os.path.exists(ICON_PNG):
+            root.iconphoto(True, tk.PhotoImage(file=ICON_PNG))
+    except tk.TclError:
+        pass   # アイコンがなくてもアプリは使える
+
+
 def main():
     hide_console()
+    set_app_id()
     root = tk.Tk()
+    set_icon(root)
     App(root)
     root.mainloop()
 

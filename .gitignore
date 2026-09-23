@@ -6,3 +6,4 @@ _freeze/
 run.bat
 samples/動画_生成テスト/
 app_settings.json
+*.lnk
