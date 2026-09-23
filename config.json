@@ -3,5 +3,6 @@
   "width": 1080,
   "height": 1920,
   "sizing": "fit",
-  "whisper_model": "large-v3"
+  "whisper_model": "large-v3",
+  "low_confidence": 0.5
 }
