@@ -84,6 +84,7 @@ class Placer:
                 existing[_norm(path)] = clip
 
         items = {}
+        self.newly_imported = set()
         for path in paths:
             key = _norm(path)
             if key in items:
@@ -98,7 +99,12 @@ class Placer:
             if not imported:
                 raise PlaceError(f"メディアプールに取り込めません: {path}")
             items[key] = imported[0]
+            self.newly_imported.add(key)
             self.log(f"取り込み: {os.path.basename(path)}")
+
+        stills = {_norm(c["path"]): c["path"] for s in self.plan["sections"] for c in s["clips"] if c["type"] != "video"}
+        for key, path in stills.items():
+            self._prepare_still(items[key], path, key in self.newly_imported)
         return items
 
     def _create_timeline(self, name):
@@ -155,39 +161,58 @@ class Placer:
         items = self.media_pool.AppendToTimeline([info])
         return items[0] if items else None
 
-    def _source_frames(self, clip, item):
-        """クリップに使う素材側のフレーム数（素材のフレームレートで数える）"""
-        if clip["type"] != "video":
-            return clip["frames"]
-        src_fps = _float(item.GetClipProperty("FPS")) or self.fps
-        return max(1, round(clip["frames"] * src_fps / self.fps))
+    def _prepare_still(self, item, path, newly_imported):
+        """静止画は取り込んだ時点のプロジェクトのフレームレートと、既定の長さ（通常5秒）を持つ。
+        今回取り込んだものはフレームレートをタイムラインに合わせる（既存タイムラインで使っているかもしれない
+        取り込み済みのものは変えない）。調査用に状態を表示する。"""
+        before = item.GetClipProperty("FPS")
+        if newly_imported and _float(before) not in (None, float(self.fps)):
+            item.SetClipProperty("FPS", str(self.fps))
+        after = item.GetClipProperty("FPS")
+        change = f"{before} → {after}" if after != before else f"{after}"
+        self.log(f"  静止画 {os.path.basename(path)}: FPS {change}、長さ {item.GetClipProperty('Frames')} フレーム")
 
-    def _place_clip(self, sec, clip, item):
-        frames = self._source_frames(clip, item)
+    def _append_range(self, item, pos, src_frames, expected):
+        """素材の先頭から src_frames フレームを pos に置く。最初の1本で endFrame の意味を確かめる。"""
         info = {"mediaPoolItem": item, "startFrame": 0, "trackIndex": 1, "mediaType": 1,
-                "recordFrame": self.start + clip["record_frame"]}
-        label = f"{sec['label']}（{os.path.basename(clip['path'])}）"
-
-        if self.end_inclusive is None:
-            # 最初の1本で endFrame の意味を確かめる
-            placed = self._append(dict(info, endFrame=frames))
-            if placed is None:
-                raise PlaceError(f"{label} をタイムラインに置けません")
-            if placed.GetDuration() == clip["frames"] + 1:
+                "recordFrame": self.start + pos}
+        if self.end_inclusive is not None:
+            return self._append(dict(info, endFrame=src_frames - 1 if self.end_inclusive else src_frames))
+        placed = self._append(dict(info, endFrame=src_frames))
+        if placed is not None:
+            if placed.GetDuration() == expected + 1:
                 self.timeline.DeleteClips([placed])
                 self.end_inclusive = True
-                placed = self._append(dict(info, endFrame=frames - 1))
-            else:
+                placed = self._append(dict(info, endFrame=src_frames - 1))
+            elif placed.GetDuration() == expected:
                 self.end_inclusive = False
-        else:
-            placed = self._append(dict(info, endFrame=frames - 1 if self.end_inclusive else frames))
+        return placed
 
-        if placed is None:
-            raise PlaceError(f"{label} をタイムラインに置けません")
-        if abs(placed.GetDuration() - clip["frames"]) > 1 or placed.GetStart() != info["recordFrame"]:
-            raise PlaceError(f"{label} の位置・長さが配置表と違います"
-                             f"（予定: {clip['record_frame']}から{clip['frames']}フレーム、"
-                             f"実際: {placed.GetStart() - self.start}から{placed.GetDuration()}フレーム）")
+    def _place_clip(self, sec, clip, item):
+        """クリップを置く。静止画が素材の長さの上限で切られたら、同じ画像を続けて並べて埋める。"""
+        label = f"{sec['label']}（{os.path.basename(clip['path'])}）"
+        still = clip["type"] != "video"
+        src_fps = _float(item.GetClipProperty("FPS")) or self.fps
+        pos, remaining, pieces = clip["record_frame"], clip["frames"], 0
+        while remaining > 0:
+            src = max(1, round(remaining * src_fps / self.fps))
+            placed = self._append_range(item, pos, src, remaining)
+            if placed is None:
+                raise PlaceError(f"{label} をタイムラインに置けません")
+            got = placed.GetDuration()
+            if placed.GetStart() != self.start + pos or got <= 0 or got > remaining + 1 or \
+                    (not still and got < remaining - 1):
+                raise PlaceError(
+                    f"{label} の位置・長さが配置表と違います（予定: {pos}から{remaining}フレーム、"
+                    f"実際: {placed.GetStart() - self.start}から{got}フレーム。素材の FPS {item.GetClipProperty('FPS')}、"
+                    f"長さ {item.GetClipProperty('Frames')} フレーム、渡した endFrame {src}）")
+            pos, remaining, pieces = pos + got, remaining - got, pieces + 1
+            if not still or pieces >= 500:
+                break
+        if remaining > 1:
+            raise PlaceError(f"{label} を最後まで置けませんでした（残り {remaining} フレーム）")
+        if pieces > 1:
+            self.log(f"  {label}: 静止画の長さの上限のため、同じ画像を {pieces} 本に分けて並べました")
 
     def _place_narration(self, item):
         info = {"mediaPoolItem": item, "trackIndex": 1, "mediaType": 2, "recordFrame": self.start}
