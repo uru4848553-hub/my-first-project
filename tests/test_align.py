@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from dataclasses import dataclass
 
-from core.align import build_text, save_words, section_timings
+from core.align import build_text, proportional_timings, save_words, section_timings
 from core.script import parse_script
 
 SCRIPT = """\
@@ -103,6 +103,12 @@ class AlignTest(unittest.TestCase):
         with open(path, encoding="utf-8") as f:
             self.assertEqual(json.load(f), [{"word": "こん", "start": 0.1, "end": 0.3, "probability": 0.8}])
         self.assertEqual(os.path.basename(path), "alignment.json")
+
+    def test_proportional_timings(self):
+        sections = parse_script("## S01\n一二三。\n## S02\n四。\n").sections   # 4文字と2文字
+        timings = proportional_timings(sections, 12.0)
+        self.assertEqual([t.start for t in timings], [0.0, 8.0])
+        self.assertIsNone(timings[0].confidence)
 
     def test_no_words(self):
         with self.assertRaises(ValueError):

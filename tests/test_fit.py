@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 from core.ffmpeg import extract_last_frame, probe_video
-from core.fit import apply_fit, freeze_path_for, section_clips, video_frames
+from core.fit import apply_fit, freeze_dir_for, section_clips, video_frames
 
 HAS_FFMPEG = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
 
@@ -48,9 +48,8 @@ class SectionClipsTest(unittest.TestCase):
         self.assertEqual(video_frames(2.0333334, 30), 61)
         self.assertEqual(video_frames(1.001, 30), 30)
 
-    def test_freeze_path(self):
-        self.assertEqual(freeze_path_for(os.path.join("m", "S03a_screen.mp4")),
-                         os.path.join("m", "_freeze", "S03a_screen_last.png"))
+    def test_freeze_dir(self):
+        self.assertEqual(freeze_dir_for(os.path.join("m", "S03a_screen.mp4")), os.path.join("m", "_freeze"))
 
 
 def make_video(path, colors, seconds, fps=30, size="64x64"):
@@ -118,7 +117,8 @@ class FFmpegTest(unittest.TestCase):
         self.assertEqual([(c["type"], c["record_frame"], c["frames"]) for c in s1["clips"]],
                          [("video", 0, 30), ("freeze", 30, 75)])
         freeze_png = s1["clips"][1]["path"]
-        self.assertEqual(freeze_png, os.path.join(media, "_freeze", "S01_short_last.png"))
+        self.assertEqual(os.path.dirname(freeze_png), os.path.join(media, "_freeze"))
+        self.assertRegex(os.path.basename(freeze_png), r"^S01_short_last_[0-9a-f]{8}\.png$")
         self.assertGreater(pixel(freeze_png)[1], 100)   # 最終フレーム＝緑
         self.assertEqual(s1["freeze_frames"], 75)
         self.assertEqual(warnings, ["S01: 静止フレームで埋めた尺が2.5秒（素材不足の可能性）"])
@@ -127,15 +127,24 @@ class FFmpegTest(unittest.TestCase):
 
         self.assertEqual([(c["type"], c["frames"], c["source_out_sec"]) for c in s2["clips"]], [("video", 60, 2.0)])
         self.assertEqual(s2["freeze_frames"], 0)
-        self.assertFalse(os.path.exists(freeze_path_for(long_)))   # 足りている動画の静止画は作らない
+        # 足りている動画の静止画は作らない。作業用の一時ファイルも残らない
+        self.assertEqual(os.listdir(os.path.join(media, "_freeze")), [os.path.basename(freeze_png)])
 
         self.assertEqual(s3["clips"], [{"type": "image", "path": image, "record_frame": 165, "frames": 45}])
 
-        # 動画を差し替えて再実行すると、静止画も新しい動画の最終フレームになる
+        # 同じ動画で再実行すると同じファイルを使う
+        again = {"fps": 30, "errors": [], "sections": [dict(section("video", 0, 105, short), label="S01")]}
+        apply_fit(again, log=lambda m: None)
+        self.assertEqual(again["sections"][0]["clips"][1]["path"], freeze_png)
+
+        # 動画を差し替えると別名の新しい静止画になり、古い静止画は上書きしない
         make_video(short, ["red", "blue"], [0.5, 0.5])
-        apply_fit({"fps": 30, "errors": [], "sections": [dict(section("video", 0, 105, short), label="S01")]},
-                  log=lambda m: None)
-        self.assertGreater(pixel(freeze_png)[2], 200)   # 青
+        again = {"fps": 30, "errors": [], "sections": [dict(section("video", 0, 105, short), label="S01")]}
+        apply_fit(again, log=lambda m: None)
+        new_png = again["sections"][0]["clips"][1]["path"]
+        self.assertNotEqual(new_png, freeze_png)
+        self.assertGreater(pixel(new_png)[2], 200)      # 青
+        self.assertGreater(pixel(freeze_png)[1], 100)   # 古い方は緑のまま
 
     def test_broken_video_is_error(self):
         path = os.path.join(self.dir, "S01_broken.mp4")

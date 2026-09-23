@@ -5,6 +5,7 @@ plan.json の各セクションに、タイムラインへ置くクリップの�
 - 動画がセクションより長い：素材の先頭から使い、セクション尺で切る
 - 動画がセクションより短い：動画の直後に最終フレームの静止画（media/_freeze/ に PNG で書き出す）を置いて埋める
 """
+import hashlib
 import math
 import os
 
@@ -39,18 +40,31 @@ def section_clips(section, fps, available_frames=None, freeze_path=None):
     return clips, freeze
 
 
-def freeze_path_for(video_path):
-    folder, name = os.path.split(video_path)
-    return os.path.join(folder, FREEZE_DIR, os.path.splitext(name)[0] + "_last.png")
+def freeze_dir_for(video_path):
+    return os.path.join(os.path.dirname(video_path), FREEZE_DIR)
 
 
 def _ensure_freeze(video_path, log):
-    """最終フレームの PNG を毎回書き出し直す。
-    （コピーで差し替えた動画は更新日時が古いままのことがあり、日時では新旧を判定できないため）"""
-    dst = freeze_path_for(video_path)
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    log(f"最終フレームを書き出し中: {os.path.basename(video_path)} → {FREEZE_DIR}/{os.path.basename(dst)}")
-    return extract_last_frame(video_path, dst)
+    """最終フレームを PNG に書き出す。ファイル名は「動画名_last_内容のハッシュ.png」。
+
+    - 毎回書き出し直す（コピーで差し替えた動画は更新日時が古いままのことがあり、日時では新旧を判定できない）
+    - 内容が変われば別名になる。Resolve は同じパスの画像を取り込み済みだと古い画像を使い続けるうえ、
+      メディアプールから消すと既存のタイムラインからも消えてしまうため、上書きせず別ファイルにする
+    """
+    folder = freeze_dir_for(video_path)
+    os.makedirs(folder, exist_ok=True)
+    stem = os.path.splitext(os.path.basename(video_path))[0]
+    tmp = os.path.join(folder, stem + "_last.tmp.png")
+    extract_last_frame(video_path, tmp)
+    with open(tmp, "rb") as fp:
+        digest = hashlib.sha1(fp.read()).hexdigest()[:8]
+    dst = os.path.join(folder, f"{stem}_last_{digest}.png")
+    if os.path.exists(dst):
+        os.remove(tmp)
+    else:
+        os.replace(tmp, dst)
+        log(f"最終フレームを書き出しました: {os.path.basename(video_path)} → {FREEZE_DIR}/{os.path.basename(dst)}")
+    return dst
 
 
 def apply_fit(plan, log=print):

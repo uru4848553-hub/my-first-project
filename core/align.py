@@ -102,6 +102,17 @@ def section_timings(sections, words):
     return timings, ratio
 
 
+def proportional_timings(sections, duration):
+    """Whisper を使わず、原稿の文字数に比例して音声の長さを割り振る（配置のテスト用）"""
+    lengths = [max(len(_norm(sec.text)), 1) for sec in sections]
+    total = sum(lengths)
+    timings, t = [], 0.0
+    for n in lengths:
+        timings.append(SectionTiming(start=t, confidence=None, word_count=0))
+        t += duration * n / total
+    return timings
+
+
 def load_model(model_name, log=print):
     import stable_whisper
     import torch

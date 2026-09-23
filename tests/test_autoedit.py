@@ -63,7 +63,7 @@ class AutoeditTest(unittest.TestCase):
         with mock.patch("core.align.load_model", return_value=None), \
                 mock.patch("core.align.run_alignment", return_value=fake_words(starts)), \
                 contextlib.redirect_stdout(out):
-            code = autoedit.main([self.dir])
+            code = autoedit.main([self.dir, "--no-resolve"])
         with open(os.path.join(self.dir, "output", "plan.json"), encoding="utf-8") as f:
             return code, json.load(f), out.getvalue()
 
@@ -85,12 +85,33 @@ class AutoeditTest(unittest.TestCase):
         starts = [c["record_frame"] for s in plan["sections"] for c in s["clips"]]
         self.assertEqual(ends[:-1], starts[1:])
         self.assertEqual(ends[-1], plan["total_frames"])
-        self.assertTrue(os.path.isfile(os.path.join(self.dir, "media", "_freeze", "S03a_screen_last.png")))
+        freeze = plan["sections"][2]["clips"][1]["path"]
+        self.assertTrue(os.path.isfile(freeze))
+        self.assertTrue(os.path.basename(freeze).startswith("S03a_screen_last_"))
 
         with open(os.path.join(self.dir, "output", "report.md"), encoding="utf-8") as f:
             report = f.read()
         self.assertIn("| S03[a] | 0:05.00 | 0:04.00 | S03a_screen.mp4 | 静止フレームで埋めた尺が3.0秒（素材不足の可能性） |", report)
         self.assertTrue(os.path.isfile(os.path.join(self.dir, "output", "alignment.json")))
+
+    def test_fake_align(self):
+        out = io.StringIO()
+        with mock.patch("core.align.load_model") as load, contextlib.redirect_stdout(out):
+            code = autoedit.main([self.dir, "--fake-align", "--no-resolve"])
+        self.assertEqual(code, 0, out.getvalue())
+        load.assert_not_called()
+        with open(os.path.join(self.dir, "output", "plan.json"), encoding="utf-8") as f:
+            plan = json.load(f)
+        self.assertTrue(plan["fake_align"])
+        self.assertEqual(plan["sections"][-1]["clips"][-1]["record_frame"] + plan["sections"][-1]["clips"][-1]["frames"],
+                         plan["total_frames"])
+        self.assertIn("仮のアライメント", out.getvalue())
+
+    def test_from_plan_without_plan(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(autoedit.main([self.dir, "--from-plan"]), 1)
+        self.assertIn("plan.json がありません", out.getvalue())
 
     def test_alignment_error_stops_before_fit(self):
         code, plan, out = self.run_autoedit([0.0, 6.0, 5.0, 9.0])

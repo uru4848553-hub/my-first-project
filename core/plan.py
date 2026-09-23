@@ -18,7 +18,7 @@ def to_frames(starts, audio_duration, fps):
     return [(f, frames[i + 1] if i + 1 < len(frames) else total) for i, f in enumerate(frames)], total
 
 
-def build_plan(check, timings, audio_duration, config, match_ratio=None):
+def build_plan(check, timings, audio_duration, config, match_ratio=None, fake=False):
     """check: core.checks.ProjectCheck、timings: core.align.SectionTiming のリスト（entries と同じ順）
 
     戻り値: (plan 辞書, エラー, 警告)
@@ -35,6 +35,8 @@ def build_plan(check, timings, audio_duration, config, match_ratio=None):
     if starts and starts[-1] >= audio_duration:
         errors.append(f"{check.entries[-1].section.label} の開始時刻が音声の長さ（{audio_duration:.2f}秒）を超えています")
 
+    if fake:
+        warnings.append("仮のアライメント（--fake-align：原稿の文字数で音声の長さを割り振っただけ）です。本番には使わないでください")
     if match_ratio is not None and match_ratio < 0.9:
         warnings.append(f"台本とアライメント結果の文字の一致度が低めです（{match_ratio:.0%}）")
 
@@ -53,7 +55,9 @@ def build_plan(check, timings, audio_duration, config, match_ratio=None):
             errors.append(f"{sec.label} の尺が0フレーム以下です（アライメント失敗の可能性）")
         elif dur_f < fps:
             sec_warnings.append(f"尺が1秒未満（{dur_f / fps:.2f}秒）")
-        if t.confidence is None:
+        if fake:
+            pass
+        elif t.confidence is None:
             sec_warnings.append("台本の文字と対応する単語がない（読み上げと台本が違う可能性）")
         elif t.confidence < config["low_confidence"]:
             sec_warnings.append(f"アライメント信頼度が低い（{t.confidence:.2f}）。台本と実際の読み上げが違う可能性")
@@ -91,6 +95,7 @@ def build_plan(check, timings, audio_duration, config, match_ratio=None):
         "audio": {"path": os.path.abspath(check.audio), "duration_sec": round(audio_duration, 3), "frames": total},
         "total_frames": total,
         "sections": sections,
+        "fake_align": fake,
         # エラーがある配置表はフェーズ4で使わない
         "errors": errors,
     }

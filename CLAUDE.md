@@ -125,8 +125,14 @@ Resolveを起動し、プロジェクトを開いた状態で実行する。
   - 信頼度：セクション内の単語の probability の平均。config.json の `low_confidence`（既定0.5）未満で警告。閾値は実音声で要調整
   - stable-ts 2.19.1 の align は fp16 オプションを持たず、モデルの精度（fp32）で計算する。GTX 1070 でも fp16 の遅さは問題にならない
   - 最後のセクションの終了フレーム＝音声長×fps の切り上げ。1本目の開始は常に0フレーム
-- フェーズ3：実装済み（`core/fit.py`、`core/ffmpeg.py` に probe_video・extract_last_frame を追加、単体テスト計78件）。開発環境で ffmpeg を使い、テスト動画での最終フレーム書き出し・尺調整・autoedit の通し（Whisper だけ偽物に差し替え）まで確認済み。Windows 実機での確認待ち
+- フェーズ3：実装済み（`core/fit.py`、`core/ffmpeg.py` に probe_video・extract_last_frame を追加、単体テスト計78件）。開発環境で ffmpeg を使い、テスト動画での最終フレーム書き出し・尺調整・autoedit の通し（Whisper だけ偽物に差し替え）まで確認済み。**完了**：Windows 実機で単体テスト78件OK
   - plan.json の各セクションに `clips`（type: video/freeze/image、record_frame、frames。video は source_in_sec / source_out_sec）と `freeze_frames` を追加。video のセクションは media に duration_sec・fps・width・height も入る
   - 動画の使えるフレーム数＝動画の長さ×タイムラインfps の切り捨て
-  - 最終フレームの PNG は毎回作り直す（コピーで差し替えた動画は更新日時が古いままのことがあるため、日時での判定はしない）。足りている動画の分は作らない
+  - 最終フレームの PNG は毎回書き出す（コピーで差し替えた動画は更新日時が古いままのことがあるため、日時での判定はしない）。ファイル名は `<動画名>_last_<内容のSHA1先頭8桁>.png`。内容が変われば別名にする（Resolve は同じパスの取り込み済み画像を使い続けるうえ、メディアプールから消すと既存タイムラインからも消えるため）。足りている動画の分は作らない
   - アライメント（フェーズ2）でエラーがあれば尺調整は行わない
+- フェーズ4：実装済み・**Resolve 実機での確認待ち**（`core/resolve_place.py`、`autoedit.py` に `--no-resolve` `--from-plan` `--fake-align`、`tools/make_sample.py` テスト素材の生成、単体テスト計92件。Resolve の API をまねた偽物でのテストのみ）
+  - 実機で確かめること：タイムライン単位の SetSetting で30fps・1080×1920・timelineInputResMismatchBehavior が効くか／AppendToTimeline の endFrame が含む・含まないどちらか（最初のクリップの長さで自動判定する作り）／静止画を5秒（Resolve の既定）より長く置けるか／AddMarker の frameId がタイムライン先頭からの相対か（読み戻して違えば警告）／モノラルのナレーションを A1 に置けるか（置けなければモノラルトラックを足して警告）
+  - タイムライン単位で30fpsにできないとき：プロジェクトにほかのタイムラインがなければプロジェクトのフレームレートを変えて作り直す。あればエラー（既存タイムラインは変えない）
+  - 素材は1ファイルずつ ImportMedia（まとめると連番画像がシーケンスにされるため）。ビン内に同じファイルパスのクリップがあれば使い回す
+  - 置いたクリップの GetStart・GetDuration を plan と照合し、1フレームを超えてずれたらエラーで止める
+  - `--fake-align`：Whisper を使わず原稿の文字数比で時間を割り振る。plan.json に `fake_align: true`。録音なしで配置を試すため
