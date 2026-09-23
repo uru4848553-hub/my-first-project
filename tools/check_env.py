@@ -78,6 +78,16 @@ def check_stable_ts():
     return True
 
 
+def check_pillow():
+    try:
+        import PIL
+    except ImportError:
+        report(False, "Pillow（テロップ用）", "入っていません。  .\\run.bat -m pip install pillow  を実行してください")
+        return False
+    report(True, "Pillow（テロップ用）", PIL.__version__)
+    return True
+
+
 def check_model(model_name):
     import stable_whisper
     print(f"     Whisper {model_name} を読み込み中（初回はダウンロードに時間がかかります）...")
@@ -101,6 +111,7 @@ def main():
     check_ffmpeg()
     torch_ok = check_torch()
     stable_ok = check_stable_ts()
+    check_pillow()
     if args.load_model and torch_ok and stable_ok:
         check_model(config["whisper_model"])
 

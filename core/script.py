@@ -1,16 +1,24 @@
 """台本（script.md）の解析。
 
-## Sxx をシーン見出し、行頭の [a] [b] … をサブセクションの区切りとして、
+## Sxx をシーン見出し、行頭の [a] [b] …（[1] [2] … とも書ける）をサブセクションの区切りとして、
 セクション単位の原稿に分割する。
+
+読み上げない指示の行:
+- 「テロップ：文字」… その場所のテロップ（1行につき画面の1行）
+- 「効果音：K01」「効果音：K01 +1.5」… 効果音（K01_〜 のファイル）を、開始から（＋秒ずらして）鳴らす
+  セクション（[a] など）の中に書けばそのセクション、シーン見出しの直後（最初の [a] より前）に書けばシーン全体が対象
 """
 import re
 import string
+import unicodedata
 from dataclasses import dataclass, field
 
 SCENE_HEADING = re.compile(r"^##\s*S(\d{2})\s*$")
 # 「## S1」「# s01」など、シーン見出しのつもりで書式が違うもの
 SCENE_HEADING_LIKE = re.compile(r"^#+\s*[Ss]\d")
-SUB_MARKER = re.compile(r"^\[([a-z])\]\s*(.*)$")
+SUB_MARKER = re.compile(r"^\[([a-z]|\d{1,2})\]\s*(.*)$")
+DIRECTIVE = re.compile(r"^(テロップ|効果音|SE)\s*[：:]\s*(.*)$", re.IGNORECASE)
+SFX_VALUE = re.compile(r"^K(\d{2})(?:\s*\+\s*(\d+(?:\.\d+)?)\s*(?:秒|s)?)?$", re.IGNORECASE)
 SUB_MARKER_UPPER = re.compile(r"^\[[A-Z]\]")
 
 
@@ -20,6 +28,8 @@ class Section:
     sub: str | None       # "a" / None（マーカーなし）
     line_no: int
     lines: list[str] = field(default_factory=list)
+    telops: list[str] = field(default_factory=list)
+    sfx: list = field(default_factory=list)          # [(効果音ID "K01", ずらす秒)]
 
     @property
     def key(self):
@@ -41,6 +51,8 @@ class Scene:
     id: str               # "S01"
     line_no: int
     sections: list[Section] = field(default_factory=list)
+    telops: list[str] = field(default_factory=list)  # シーン全体に出すテロップ
+    sfx: list = field(default_factory=list)          # シーンの頭から鳴らす効果音
 
     @property
     def number(self):
@@ -60,6 +72,40 @@ class ScriptResult:
     @property
     def sections(self):
         return [sec for scene in self.scenes for sec in scene.sections]
+
+    @property
+    def sfx_ids(self):
+        """台本に出てくる効果音 ID（出てきた順、重複なし）"""
+        ids = []
+        for scene in self.scenes:
+            for sid, _ in scene.sfx + [x for sec in scene.sections for x in sec.sfx]:
+                if sid not in ids:
+                    ids.append(sid)
+        return ids
+
+
+def sub_letter(value):
+    """マーカーの中身（"a" / "1"）→ 小文字1字（"a"）。範囲外は None"""
+    if value.isdigit():
+        n = int(value)
+        return string.ascii_lowercase[n - 1] if 1 <= n <= 26 else None
+    return value
+
+
+def _directive(scene, section, kind, value, line_no, errors):
+    """テロップ・効果音の行を、今のセクション（なければシーン全体）に付ける"""
+    target = section or scene
+    if kind == "テロップ":
+        if not value:
+            errors.append(f"script.md {line_no}行目: テロップの文字がありません")
+        else:
+            target.telops.append(value)
+        return
+    m = SFX_VALUE.match(unicodedata.normalize("NFKC", value).strip())
+    if not m:
+        errors.append(f"script.md {line_no}行目: 効果音は「効果音：K01」や「効果音：K01 +1.5」の形で書いてください（「{value}」）")
+        return
+    target.sfx.append((f"K{m.group(1)}", float(m.group(2) or 0)))
 
 
 def parse_script(text):
@@ -94,13 +140,23 @@ def parse_script(text):
                 preamble_reported = True
             continue
 
+        m = DIRECTIVE.match(line)
+        if m:
+            kind = "テロップ" if m.group(1) == "テロップ" else "効果音"
+            _directive(scene, section, kind, m.group(2).strip(), line_no, errors)
+            continue
+
         if SUB_MARKER_UPPER.match(line):
             errors.append(f"script.md {line_no}行目: マーカーは小文字で書いてください（[A] ではなく [a]）")
             continue
 
         m = SUB_MARKER.match(line)
         if m:
-            section = Section(scene=scene.id, sub=m.group(1), line_no=line_no)
+            sub = sub_letter(m.group(1))
+            if sub is None:
+                errors.append(f"script.md {line_no}行目: マーカーの番号は [1]〜[26] にしてください")
+                continue
+            section = Section(scene=scene.id, sub=sub, line_no=line_no)
             scene.sections.append(section)
             if m.group(2):
                 section.lines.append(m.group(2))

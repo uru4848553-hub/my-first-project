@@ -65,7 +65,8 @@ def build(folder, config, fake_align=False):
     from core.align import build_text, load_model, proportional_timings, run_alignment, save_words, section_timings
     from core.ffmpeg import FFmpegError, probe_duration
     from core.fit import apply_fit
-    from core.plan import build_plan, report_rows, write_plan
+    from core.plan import build_plan, report_extra, report_rows, write_plan
+    from core.telop import apply_telops
 
     try:
         duration = probe_duration(check.audio)
@@ -85,6 +86,16 @@ def build(folder, config, fake_align=False):
             print_messages(check)
             return None
         print(f"BGM: {os.path.basename(check.bgm)}（{bgm_duration:.1f}秒）")
+    sfx_durations = {}
+    for sid, path in check.sfx.items():
+        try:
+            sfx_durations[sid] = probe_duration(path)
+        except FFmpegError as e:
+            check.errors.append(f"効果音 {sid} を読めません: {e}")
+    if check.errors:
+        write_report(check)
+        print_messages(check)
+        return None
 
     sections = [e.section for e in check.entries]
     started = time.time()
@@ -107,7 +118,7 @@ def build(folder, config, fake_align=False):
     print(f"アライメント完了（{time.time() - started:.0f}秒）")
 
     plan, plan_errors, plan_warnings = build_plan(check, timings, duration, config, ratio, fake=fake_align,
-                                                   bgm_duration=bgm_duration)
+                                                   bgm_duration=bgm_duration, sfx_durations=sfx_durations)
     check.errors.extend(plan_errors)
     check.warnings.extend(plan_warnings)
 
@@ -116,9 +127,11 @@ def build(folder, config, fake_align=False):
         fit_errors, fit_warnings = apply_fit(plan)
         check.errors.extend(fit_errors)
         check.warnings.extend(fit_warnings)
+        # テロップの画像と動画
+        check.errors.extend(apply_telops(plan, config))
 
     plan_path = write_plan(plan, check.folder)
-    report_path = write_report(check, report_rows(plan))
+    report_path = write_report(check, report_rows(plan), report_extra(plan))
 
     print_messages(check)
     print(f"配置表: {plan_path}")
@@ -132,6 +145,10 @@ def build(folder, config, fake_align=False):
     for s in plan["sections"]:
         freeze = f"（うち静止 {s['freeze_frames'] / fps:.2f}秒）" if s["freeze_frames"] else ""
         print(f"  {s['label']:<7} {s['start_frame'] / fps:7.2f}秒〜  {s['duration_frames'] / fps:6.2f}秒  {s['media']['name']}{freeze}")
+    if plan["telops"]:
+        print(f"  テロップ {len(plan['telops'])} 件")
+    if plan["sfx"]:
+        print(f"  効果音 {len(plan['sfx'])} 件")
     return plan
 
 

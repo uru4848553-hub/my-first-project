@@ -1,6 +1,6 @@
 """Resolve 自動配置アプリ（画面）。
 
-台本・ナレーション・BGM・シーンごとの素材を選んで「スタート」を押すと、
+台本・ナレーション・BGM・シーンごとの素材・効果音を選んで「スタート」を押すと、
 動画フォルダを作り、autoedit.py を実行して DaVinci Resolve にタイムラインを作る。
 （Resolve が起動していなければ起動する）
 
@@ -18,15 +18,18 @@ from tkinter import filedialog, messagebox, ttk
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-from core.assemble import assemble, auto_assign, validate  # noqa: E402
+from core.assemble import assemble, auto_assign, is_sfx_key, validate  # noqa: E402
 from core.script import parse_script  # noqa: E402
 
 SETTINGS = os.path.join(ROOT, "app_settings.json")
 AUDIO_TYPES = [("音声", "*.wav *.mp3 *.m4a"), ("すべて", "*.*")]
 MEDIA_TYPES = [("動画・画像", "*.mp4 *.mov *.png *.jpg *.jpeg"), ("すべて", "*.*")]
 SCRIPT_TYPES = [("台本", "*.md *.txt"), ("すべて", "*.*")]
+ALL_TYPES = [("動画・画像・効果音", "*.mp4 *.mov *.png *.jpg *.jpeg *.wav *.mp3 *.m4a"), ("すべて", "*.*")]
 EXAMPLE = """\
 ## S01
+テロップ：AI副業の始め方
+効果音：K01
 こんにちは、ヒロキです。今日はAI副業の始め方を話します。
 
 ## S02
@@ -40,7 +43,11 @@ HELP = """\
 ・「## S01」「## S02」… でシーンを区切り、その下にナレーションの文章を書きます
 ・ナレーションの音声と同じ文章にしてください（違うと切り替え位置がずれます）
 ・1つのシーンで素材を切り替えるときは、行頭に [a] [b] … を付けます
-・「//」で始まる行はメモ（テロップやカメラの指示など。読み上げない）"""
+  （[1] [2] … でも同じ。素材の名前 M03_1・M03_2 と対応します）
+・「テロップ：文字」の行 … その場所にテロップを出します（1行＝画面の1行）
+・「効果音：K01」の行 … その場所の頭で効果音 K01 を鳴らします（「効果音：K01 +1.5」で1.5秒後）
+  シーン見出しの直後（[a] より前）に書くとシーン全体、[a] などの後に書くとその部分だけが対象です
+・「//」で始まる行はメモ（カメラの指示など。読み上げない）"""
 
 
 def load_settings():
@@ -73,7 +80,8 @@ class App:
         self.root = root
         self.settings = load_settings()
         self.sections = []
-        self.materials = {}          # {セクションのキー: 素材のパス}
+        self.sfx_uses = {}           # {効果音ID: 使う場所のラベルのリスト}
+        self.materials = {}          # {セクションのキー または 効果音ID: ファイルのパス}
         self.narration = tk.StringVar()
         self.bgm = tk.StringVar()
         self.name = tk.StringVar(value=self.settings.get("name", ""))
@@ -159,18 +167,18 @@ class App:
         ttk.Button(btns, text="外す", command=lambda: self.bgm.set("")).pack(side="left", padx=(4, 0))
 
         # 4. 素材
-        step4 = ttk.LabelFrame(outer, text=" ④ シーンごとの素材（動画・画像） ", padding=8)
+        step4 = ttk.LabelFrame(outer, text=" ④ シーンごとの素材（動画・画像）と効果音 ", padding=8)
         step4.grid(row=3, column=0, sticky="nsew", pady=(10, 0))
         step4.columnconfigure(0, weight=1)
         step4.rowconfigure(1, weight=1)
         bar = ttk.Frame(step4)
         bar.grid(row=0, column=0, columnspan=2, sticky="ew")
         ttk.Button(bar, text="まとめて追加…", command=self.add_many).pack(side="left")
-        ttk.Button(bar, text="選んだシーンの素材を選ぶ…", command=self.choose_for_selected).pack(side="left", padx=6)
-        ttk.Button(bar, text="選んだシーンから外す", command=self.clear_selected).pack(side="left")
+        ttk.Button(bar, text="選んだ行のファイルを選ぶ…", command=self.choose_for_selected).pack(side="left", padx=6)
+        ttk.Button(bar, text="選んだ行から外す", command=self.clear_selected).pack(side="left")
         ttk.Label(bar, text="行をダブルクリックでも選べます", foreground="#666").pack(side="right")
         self.table = ttk.Treeview(step4, columns=("scene", "text", "file"), show="headings", height=8)
-        for col, title, width in (("scene", "シーン", 80), ("text", "ナレーション（冒頭）", 360), ("file", "素材ファイル", 420)):
+        for col, title, width in (("scene", "シーン", 80), ("text", "ナレーション（冒頭）／効果音を使う場所", 360), ("file", "ファイル", 420)):
             self.table.heading(col, text=title)
             self.table.column(col, width=width, stretch=col != "scene")
         self.table.grid(row=1, column=0, sticky="nsew", pady=(6, 0))
@@ -179,6 +187,7 @@ class App:
         self.table.configure(yscrollcommand=sb.set)
         self.table.bind("<Double-1>", lambda e: self.choose_for_selected())
         self.table.tag_configure("missing", foreground="#c0392b")
+        self.table.tag_configure("sfx", background="#fff6e0")
 
         # 5. スタート
         step5 = ttk.LabelFrame(outer, text=" ⑤ DaVinci Resolve に並べる ", padding=8)
@@ -229,24 +238,35 @@ class App:
         self._parse_job = None
         result = parse_script(self.script_text())
         self.sections = result.sections if not result.errors else []
+        self.sfx_uses = {}
+        if not result.errors:
+            for scene in result.scenes:
+                for label, target in [(scene.id, scene)] + [(sec.label, sec) for sec in scene.sections]:
+                    for sid, _ in target.sfx:
+                        uses = self.sfx_uses.setdefault(sid, [])
+                        if label not in uses:
+                            uses.append(label)
         if not self.script_text().strip():
             self.script_status.configure(text="台本を入力するか、ファイルから読み込んでください", foreground="#666")
         elif result.errors:
             self.script_status.configure(text=f"台本に問題があります：{result.errors[0]}", foreground="#c0392b")
         else:
-            self.script_status.configure(text=f"{len(result.scenes)} シーン / {len(self.sections)} 素材", foreground="#2e7d32")
+            telops = sum(len(sc.telops) + sum(len(x.telops) for x in sc.sections) for sc in result.scenes)
+            extra = (f" / テロップ {telops} 行" if telops else "") + (f" / 効果音 {len(self.sfx_uses)} 種類" if self.sfx_uses else "")
+            self.script_status.configure(text=f"{len(result.scenes)} シーン / {len(self.sections)} 素材{extra}", foreground="#2e7d32")
         self._fill_table()
 
     def _update_status(self):
         if self.running:
             return
         missing = [s.label for s in self.sections if s.key not in self.materials]
+        missing += [k for k in self.sfx_uses if k not in self.materials]
         if not self.sections:
             self.status.set("② 台本を入力してください")
         elif not self.narration.get():
             self.status.set("③ ナレーションの音声を選んでください")
         elif missing:
-            self.status.set(f"④ 素材を選んでください（残り {len(missing)} シーン：{', '.join(missing[:5])}{' …' if len(missing) > 5 else ''}）")
+            self.status.set(f"④ 素材・効果音を選んでください（残り {len(missing)} 件：{', '.join(missing[:5])}{' …' if len(missing) > 5 else ''}）")
         else:
             self.status.set("準備ができました。「スタート」を押してください")
 
@@ -257,7 +277,15 @@ class App:
             text = sec.text[:30] + ("…" if len(sec.text) > 30 else "")
             self.table.insert("", "end", iid=sec.key, values=(sec.label, text, os.path.basename(path) if path else "（未選択）"),
                               tags=() if path else ("missing",))
+        for sid, uses in self.sfx_uses.items():
+            path = self.materials.get(sid)
+            self.table.insert("", "end", iid=sid, values=(f"効果音 {sid}", "使う場所: " + ", ".join(uses),
+                                                          os.path.basename(path) if path else "（未選択）"),
+                              tags=("sfx",) if path else ("sfx", "missing"))
         self._update_status()
+
+    def _keys(self):
+        return [s.key for s in self.sections] + list(self.sfx_uses)
 
     def load_script(self):
         path = filedialog.askopenfilename(title="台本を選ぶ", filetypes=SCRIPT_TYPES)
@@ -302,25 +330,27 @@ class App:
         if not self.sections:
             messagebox.showinfo("台本が先です", "先に台本を入力してください（シーンの一覧ができてから素材を追加します）")
             return
-        paths = filedialog.askopenfilenames(title="素材をまとめて選ぶ", filetypes=MEDIA_TYPES)
+        paths = filedialog.askopenfilenames(title="素材・効果音をまとめて選ぶ", filetypes=ALL_TYPES)
         if not paths:
             return
-        keys = [s.key for s in self.sections]
-        self.materials, left = auto_assign(keys, [os.path.normpath(p) for p in paths], self.materials)
+        self.materials, left = auto_assign(self._keys(), [os.path.normpath(p) for p in paths], self.materials)
         self._fill_table()
         if left:
-            messagebox.showwarning("入りきりません", "シーンより素材が多いため、次のファイルは割り当てていません:\n"
+            messagebox.showwarning("入りきりません", "入れる場所が足りないため、次のファイルは割り当てていません:\n"
                                    + "\n".join(os.path.basename(p) for p in left))
 
     def choose_for_selected(self):
         keys = self.table.selection()
         if not keys:
-            messagebox.showinfo("シーンを選んでください", "表からシーンを選んでから押してください")
+            messagebox.showinfo("行を選んでください", "表からシーン（または効果音）を選んでから押してください")
             return
-        path = filedialog.askopenfilename(title=f"{keys[0]} の素材を選ぶ", filetypes=MEDIA_TYPES)
+        sfx = is_sfx_key(keys[0])
+        path = filedialog.askopenfilename(title=f"{keys[0]} の{'効果音' if sfx else '素材'}を選ぶ",
+                                          filetypes=AUDIO_TYPES if sfx else MEDIA_TYPES)
         if path:
             for key in keys:
-                self.materials[key] = os.path.normpath(path)
+                if is_sfx_key(key) == sfx:
+                    self.materials[key] = os.path.normpath(path)
             self._fill_table()
 
     def clear_selected(self):
@@ -334,7 +364,7 @@ class App:
         if self.running:
             return
         self.refresh_sections()
-        materials = {s.key: self.materials[s.key] for s in self.sections if s.key in self.materials}
+        materials = {k: self.materials[k] for k in self._keys() if k in self.materials}
         problems = []
         if not self.name.get().strip():
             problems.append("動画の名前を入力してください")
@@ -343,7 +373,7 @@ class App:
         result = parse_script(self.script_text())
         if result.errors:
             problems.append("台本に問題があります:\n  " + "\n  ".join(result.errors))
-        problems += validate(self.sections, self.narration.get(), materials, self.bgm.get() or None)
+        problems += validate(self.sections, self.narration.get(), materials, self.bgm.get() or None, list(self.sfx_uses))
         if problems:
             messagebox.showerror("入力を確認してください", "\n".join("・" + p for p in problems))
             return

@@ -24,6 +24,10 @@ class FakeItem:
     def GetClipProperty(self, key):
         return {"File Path": self.path, "FPS": f"{self.fps:g}", "Frames": str(self.frames)}.get(key)
 
+    def SetClipProperty(self, key, value):
+        self.alpha = value if key == "Alpha mode" else None
+        return key == "Alpha mode"
+
 
 class FakeFolder:
     def __init__(self, name):
@@ -58,6 +62,7 @@ class FakeTimeline:
         self.fps_settable = fps_settable
         self.items, self.markers = [], {}
         self.audio_tracks = 1
+        self.video_tracks = 1
 
     def GetName(self):
         return self.name
@@ -87,11 +92,14 @@ class FakeTimeline:
         return dict(self.markers)
 
     def AddTrack(self, kind, sub=None):
-        self.audio_tracks += 1
+        if kind == "video":
+            self.video_tracks += 1
+        else:
+            self.audio_tracks += 1
         return True
 
     def GetTrackCount(self, kind):
-        return self.audio_tracks
+        return self.video_tracks if kind == "video" else self.audio_tracks
 
 
 class FakeMediaPool:
@@ -390,6 +398,64 @@ class PlaceTest(unittest.TestCase):
     def test_no_project(self):
         with self.assertRaises(PlaceError):
             place(FakeResolve(None), self.plan, log=lambda m: None)
+
+    def add_telops_and_sfx(self):
+        def f(name):
+            path = os.path.join(self.dir, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            open(path, "wb").close()
+            return path
+        self.plan["telops"] = [
+            {"label": "S01", "lines": ["ついに"], "record_frame": 0, "frames": 40, "lane": 0,
+             "path": f("media/_telop/S01_aaaa_40f.mov")},
+            {"label": "S03", "lines": ["画面"], "record_frame": 70, "frames": 80, "lane": 0,
+             "path": f("media/_telop/S03_bbbb_80f.mov")},
+            {"label": "S03[b]", "lines": ["結果"], "record_frame": 120, "frames": 30, "lane": 1,
+             "path": f("media/_telop/S03b_cccc_30f.mov")},
+        ]
+        self.plan["sfx"] = [
+            {"label": "S01", "id": "K01", "record_frame": 0, "frames": 20, "lane": 0, "path": f("se/K01_pon.wav")},
+            {"label": "S02", "id": "K02", "record_frame": 45, "frames": 20, "lane": 0, "path": f("se/K02_don.wav")},
+        ]
+
+    def test_telops_and_sfx(self):
+        self.add_telops_and_sfx()
+        self.add_bgm(150)
+        project = FakeProject()
+        _, warnings = self.run_place(project)
+        self.assertEqual(warnings, [])
+        tl = project.current
+        telops = [(t.track, t.start - START, t.duration) for t in tl.items if t.item.path.endswith(".mov") and "_telop" in t.item.path]
+        self.assertEqual(telops, [(2, 0, 40), (2, 70, 80), (3, 120, 30)])
+        self.assertEqual(tl.video_tracks, 3)
+        self.assertTrue(all(t.item.alpha == "Straight" for t in tl.items if "_telop" in t.item.path))
+        # 効果音は A1 ナレーション・A2 BGM の次の A3 に、ファイルの長さのまま
+        sfx = [(t.track, t.start - START) for t in tl.items if "/se/" in t.item.path.replace(os.sep, "/")]
+        self.assertEqual(sfx, [(3, 0), (3, 45)])
+        self.assertNotIn("endFrame", [a for a in project.pool.appends if "/se/" in a["mediaPoolItem"].path.replace(os.sep, "/")][0])
+
+    def test_sfx_without_bgm_goes_to_a2(self):
+        self.add_telops_and_sfx()
+        self.plan["sfx"][1]["lane"] = 1
+        project = FakeProject()
+        self.run_place(project)
+        sfx = [t.track for t in project.current.items if "/se/" in t.item.path.replace(os.sep, "/")]
+        self.assertEqual(sfx, [2, 3])
+
+    def test_telop_failure_is_only_a_warning(self):
+        self.add_telops_and_sfx()
+        project = FakeProject()
+        orig = project.pool.AppendToTimeline
+        project.pool.AppendToTimeline = lambda infos: [] if "_telop" in infos[0]["mediaPoolItem"].path else orig(infos)
+        name, warnings = self.run_place(project)
+        self.assertTrue(name)
+        self.assertEqual(sum("テロップ" in w for w in warnings), 3)
+
+    def test_check_plan_telop_missing(self):
+        self.add_telops_and_sfx()
+        os.remove(self.plan["telops"][0]["path"])
+        del self.plan["telops"][1]["path"]
+        self.assertEqual(sum("テロップ" in p for p in check_plan(self.plan)), 2)
 
     def test_check_plan(self):
         self.assertEqual(check_plan(self.plan), [])

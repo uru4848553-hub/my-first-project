@@ -14,7 +14,7 @@ def format_time(seconds):
     return f"{int(m)}:{s:05.2f}"
 
 
-def build_report(check, rows=None):
+def build_report(check, rows=None, extra=None):
     """rows: シーン表の行。{key, start, duration, media, warnings} の辞書のリスト。
     省略時は割り当て結果から作る（開始時刻・尺は未確定なので —）。"""
     if rows is None:
@@ -42,13 +42,14 @@ def build_report(check, rows=None):
                 r["media"], " / ".join(r["warnings"]) or "")) + " |")
     else:
         out.append("（エラーのため作成できませんでした）")
+    out += extra or []
     return "\n".join(out) + "\n"
 
 
-def write_report(check, rows=None):
+def write_report(check, rows=None, extra=None):
     out_dir = os.path.join(check.folder, "output")
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "report.md")
     with open(path, "w", encoding="utf-8") as fp:
-        fp.write(build_report(check, rows))
+        fp.write(build_report(check, rows, extra))
     return path

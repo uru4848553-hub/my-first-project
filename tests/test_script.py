@@ -102,5 +102,60 @@ class ParseScriptTest(unittest.TestCase):
         self.assertIsNone(r.sections[0].sub)
 
 
+    def test_numbered_markers(self):
+        r = parse_script("## S01\n[1] 一。\n[2] 二。\n")
+        self.assertEqual(r.errors, [])
+        self.assertEqual([s.key for s in r.sections], ["S01a", "S01b"])
+        self.assertTrue(any("[1]〜[26]" in e for e in parse_script("## S01\n[0] 一。\n").errors))
+
+
+STORYBOARD = """\
+## S01
+テロップ：ついに、想像を超えた
+テロップ：iPhoneが来る。
+効果音：K01
+ついに、私たちの想像を超えたiPhoneがやって来ます。
+
+## S02
+テロップ：シーン全体
+効果音：Ｋ０２ ＋1.5秒
+[1] 一つ目。
+テロップ：一つ目だけ
+[2] 二つ目。
+効果音: K01 +0.5
+SE：K03
+"""
+
+
+class DirectiveTest(unittest.TestCase):
+    def test_telop_and_sfx(self):
+        r = parse_script(STORYBOARD)
+        self.assertEqual(r.errors, [])
+        s1, s2 = r.scenes
+        # テロップ・効果音の行は読み上げ原稿に入らない
+        self.assertEqual(s1.sections[0].text, "ついに、私たちの想像を超えたiPhoneがやって来ます。")
+        self.assertEqual(s1.telops, ["ついに、想像を超えた", "iPhoneが来る。"])
+        self.assertEqual(s1.sfx, [("K01", 0.0)])
+        self.assertEqual(s2.telops, ["シーン全体"])
+        self.assertEqual(s2.sfx, [("K02", 1.5)])
+        self.assertEqual(s2.sections[0].telops, ["一つ目だけ"])
+        self.assertEqual(s2.sections[1].sfx, [("K01", 0.5), ("K03", 0.0)])
+        self.assertEqual(r.sfx_ids, ["K01", "K02", "K03"])
+
+    def test_directive_after_text_in_unmarked_scene(self):
+        r = parse_script("## S01\n一。\nテロップ：あと\n")
+        self.assertEqual(r.sections[0].telops, ["あと"])
+        self.assertEqual(r.sections[0].text, "一。")
+
+    def test_bad_directives(self):
+        r = parse_script("## S01\n一。\nテロップ：\n効果音：ピンポン\n")
+        self.assertTrue(any("テロップの文字がありません" in e for e in r.errors), r.errors)
+        self.assertTrue(any("効果音は「効果音：K01」" in e for e in r.errors), r.errors)
+
+    def test_scene_with_only_directives_is_empty(self):
+        r = parse_script("## S01\nテロップ：だけ\n")
+        self.assertTrue(any("原稿が空" in e for e in r.errors))
+
+
 if __name__ == "__main__":
     unittest.main()

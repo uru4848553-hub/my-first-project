@@ -39,6 +39,9 @@ class Placer:
         self.warnings = []
         self.fps = plan["fps"]
         self.end_inclusive = None   # AppendToTimeline の endFrame が含む側か（最初のクリップで判定）
+        self.narration_track = 1
+        self.alpha_done = set()
+        self.alpha_warned = False
 
     # --- 準備 ---------------------------------------------------------
 
@@ -60,9 +63,13 @@ class Placer:
         for sec in self.plan["sections"]:
             for clip in sec["clips"]:
                 self._place_clip(sec, clip, items[_norm(clip["path"])])
+        for telop in self.plan.get("telops") or []:
+            self._place_telop(telop, items[_norm(telop["path"])])
         self._place_narration(items[_norm(self.plan["audio"]["path"])])
         if self.plan.get("bgm"):
             self._place_bgm(items[_norm(self.plan["bgm"]["path"])])
+        for sfx in self.plan.get("sfx") or []:
+            self._place_sfx(sfx, items[_norm(sfx["path"])])
         self._add_markers()
         return self.timeline.GetName(), self.warnings
 
@@ -81,6 +88,8 @@ class Placer:
         paths = [c["path"] for s in self.plan["sections"] for c in s["clips"]] + [self.plan["audio"]["path"]]
         if self.plan.get("bgm"):
             paths.append(self.plan["bgm"]["path"])
+        paths += [t["path"] for t in self.plan.get("telops") or []]
+        paths += [x["path"] for x in self.plan.get("sfx") or []]
         existing = {}
         for clip in folder.GetClipList() or []:
             path = clip.GetClipProperty("File Path")
@@ -159,9 +168,9 @@ class Placer:
         items = self.media_pool.AppendToTimeline([info])
         return items[0] if items else None
 
-    def _append_range(self, item, pos, src_frames, expected):
+    def _append_range(self, item, pos, src_frames, expected, track=1):
         """素材の先頭から src_frames フレームを pos に置く。最初の1本で endFrame の意味を確かめる。"""
-        info = {"mediaPoolItem": item, "startFrame": 0, "trackIndex": 1, "mediaType": 1,
+        info = {"mediaPoolItem": item, "startFrame": 0, "trackIndex": track, "mediaType": 1,
                 "recordFrame": self.start + pos}
         if self.end_inclusive is not None:
             return self._append(dict(info, endFrame=src_frames - 1 if self.end_inclusive else src_frames))
@@ -190,6 +199,60 @@ class Placer:
                 f"{label} の位置・長さが配置表と違います（予定: {pos}から{frames}フレーム、"
                 f"実際: {placed.GetStart() - self.start}から{got}フレーム。素材の FPS {item.GetClipProperty('FPS')}、"
                 f"長さ {item.GetClipProperty('Frames')} フレーム、渡した endFrame {src}）")
+
+    def _ensure_tracks(self, kind, count, sub_type=None):
+        while self.timeline.GetTrackCount(kind) < count:
+            ok = self.timeline.AddTrack(kind, sub_type) if sub_type else self.timeline.AddTrack(kind)
+            if not ok:
+                return False
+        return True
+
+    def _set_alpha(self, item):
+        """テロップの透明部分を透明として扱うよう、クリップ属性のアルファモードを設定する（1回だけ試す）"""
+        if id(item) in self.alpha_done:
+            return
+        self.alpha_done.add(id(item))
+        for key in ("Alpha mode", "Alpha Mode"):
+            try:
+                if item.SetClipProperty(key, "Straight"):
+                    return
+            except Exception:  # 項目名が違うと例外になる版がある
+                pass
+        if not self.alpha_warned:
+            self.alpha_warned = True
+            self.warnings.append("テロップのアルファモードを設定できませんでした。テロップの周りが黒くなる場合は、"
+                                 "メディアプールでテロップのクリップを右クリック → クリップ属性 → アルファモードを「ストレート」にしてください")
+
+    def _place_telop(self, telop, item):
+        """テロップ（透明付きの動画）を V2（重なるときは V3 …）に置く。うまくいかなくても警告にとどめる。"""
+        track = 2 + telop.get("lane", 0)
+        label = f"テロップ {telop['label']}「{' / '.join(telop['lines'])}」"
+        if not self._ensure_tracks("video", track):
+            self.warnings.append(f"{label}: ビデオトラック V{track} を追加できないため置けませんでした")
+            return
+        self._set_alpha(item)
+        src_fps = _float(item.GetClipProperty("FPS")) or self.fps
+        frames = telop["frames"]
+        placed = self._append_range(item, telop["record_frame"], max(1, round(frames * src_fps / self.fps)), frames, track)
+        if placed is None:
+            self.warnings.append(f"{label} を V{track} に置けませんでした")
+        elif placed.GetStart() != self.start + telop["record_frame"] or abs(placed.GetDuration() - frames) > 1:
+            self.warnings.append(f"{label} の位置・長さが想定と違います（予定: {telop['record_frame']}から{frames}フレーム、"
+                                 f"実際: {placed.GetStart() - self.start}から{placed.GetDuration()}フレーム）")
+
+    def _place_sfx(self, sfx, item):
+        """効果音を BGM の次のオーディオトラック（重なるときはさらに次）に、ファイルの長さのまま置く。"""
+        track = self.narration_track + (2 if self.plan.get("bgm") else 1) + sfx.get("lane", 0)
+        label = f"効果音 {sfx['id']}（{sfx['label']}）"
+        if not self._ensure_tracks("audio", track, "stereo"):
+            self.warnings.append(f"{label}: オーディオトラック A{track} を追加できないため置けませんでした")
+            return
+        info = {"mediaPoolItem": item, "trackIndex": track, "mediaType": 2, "recordFrame": self.start + sfx["record_frame"]}
+        placed = self._append(info)
+        if placed is None:
+            self.warnings.append(f"{label} を A{track} に置けませんでした")
+        elif placed.GetStart() != self.start + sfx["record_frame"]:
+            self.warnings.append(f"{label} の位置が想定と違います（予定: {sfx['record_frame']}、実際: {placed.GetStart() - self.start}フレーム）")
 
     def _place_bgm(self, item):
         """BGM をナレーションの次のオーディオトラック（通常 A2）に置く。うまくいかなくても警告にとどめる。"""
@@ -256,6 +319,12 @@ def check_plan(plan):
         problems.append(f"ナレーションがありません: {plan['audio']['path']}")
     if plan.get("bgm") and not os.path.isfile(plan["bgm"]["path"]):
         problems.append(f"BGM がありません: {plan['bgm']['path']}")
+    for t in plan.get("telops") or []:
+        if not t.get("path") or not os.path.isfile(t["path"]):
+            problems.append(f"テロップ {t['label']} の動画がありません（{t.get('path') or '未作成'}）")
+    for x in plan.get("sfx") or []:
+        if not os.path.isfile(x["path"]):
+            problems.append(f"効果音がありません: {x['path']}")
     return problems
 
 

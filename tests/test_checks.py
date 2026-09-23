@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from core.checks import check_project
-from core.media import find_audio, scan_media
+from core.media import find_audio, scan_media, scan_sfx
 from core.report import build_report
 
 SCRIPT = """\
@@ -67,6 +67,18 @@ class ScanMediaTest(FolderTestCase):
                 _, errors = self.scan([name])
                 self.assertError(errors, "命名ルール違反")
 
+    def test_storyboard_names(self):
+        files, errors = self.scan(["M01.mp4", "M02_グラフ.png", "M03_1.mp4", "M03_2_結果.PNG", "m04_12.mov"])
+        self.assertEqual(errors, [])
+        self.assertEqual([f.key for f in files], ["S01", "S02", "S03a", "S03b", "S04l"])
+
+    def test_storyboard_names_violations(self):
+        for name in ("M1.mp4", "M01_27.mp4", "M01_0.mp4", "K01.mp4"):
+            with self.subTest(name=name):
+                shutil.rmtree(os.path.join(self.dir, "media"), ignore_errors=True)
+                _, errors = self.scan([name])
+                self.assertError(errors, "命名ルール違反")
+
     def test_unsupported_extension(self):
         _, errors = self.scan(["S01_a.gif"])
         self.assertError(errors, "対応していない拡張子")
@@ -89,6 +101,38 @@ class ScanMediaTest(FolderTestCase):
         files, errors = scan_media(os.path.join(self.dir, "media"))
         self.assertEqual(errors, [])
         self.assertEqual(len(files), 1)
+
+
+class SfxTest(FolderTestCase):
+    def make_se(self, names):
+        os.makedirs(os.path.join(self.dir, "se"), exist_ok=True)
+        for name in names:
+            open(os.path.join(self.dir, "se", name), "wb").close()
+
+    def test_scan(self):
+        self.make_se(["K01.wav", "K02_ドン.mp3", "k03 pon.m4a"])
+        found, errors = scan_sfx(os.path.join(self.dir, "se"))
+        self.assertEqual(errors, [])
+        self.assertEqual(sorted(found), ["K01", "K02", "K03"])
+
+    def test_scan_errors(self):
+        self.make_se(["K01.wav", "K01_again.wav", "pon.wav", "K02.mp4"])
+        _, errors = scan_sfx(os.path.join(self.dir, "se"))
+        self.assertEqual(len(errors), 3, errors)
+
+    def test_check_project(self):
+        self.make_se(["K01_pon.wav", "K09_unused.wav"])
+        check = check_project(self.make(script=SCRIPT.replace("一。", "一。\n効果音：K01\n効果音：K02")))
+        self.assertError(check.errors, "効果音 K02 のファイルがありません")
+        self.assertEqual(list(check.sfx), ["K01"])
+        self.assertTrue(any("K09_unused.wav" in w for w in check.warnings))
+
+    def test_storyboard_media_in_check(self):
+        check = check_project(self.make(media=["M01.mp4", "M02.png", "M03_1.mp4", "M03_2.png"]))
+        self.assertEqual(check.errors, [])
+        os.remove(os.path.join(self.dir, "media", "M03_2.png"))
+        errors = check_project(self.dir).errors
+        self.assertError(errors, "S03[b] に対応する素材がありません（M03_2.mp4")
 
 
 class FindAudioTest(FolderTestCase):
@@ -138,11 +182,11 @@ class CheckProjectTest(FolderTestCase):
 
     def test_scene_without_media(self):
         errors = self.errors_of(media=["S01_a.mp4", "S03a_b.mp4", "S03b_c.png"])
-        self.assertEqual(errors, ["台本の S02 に対応する素材がありません（S02_〜 のファイルが必要）"])
+        self.assertEqual(errors, ["台本の S02 に対応する素材がありません（M02.mp4 や S02_〜 のファイルが必要）"])
 
     def test_marker_without_media(self):
         errors = self.errors_of(media=["S01_a.mp4", "S02_b.png", "S03a_c.mp4"])
-        self.assertEqual(errors, ["台本の S03[b] に対応する素材がありません（S03b_〜 のファイルが必要）"])
+        self.assertEqual(errors, ["台本の S03[b] に対応する素材がありません（M03_2.mp4 や S03b_〜 のファイルが必要）"])
 
     def test_media_scene_not_in_script(self):
         errors = self.errors_of(media=MEDIA + ["S04_extra.mp4"])

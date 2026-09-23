@@ -2,7 +2,7 @@
 import os
 from dataclasses import dataclass, field
 
-from core.media import find_audio, find_bgm, scan_media
+from core.media import find_audio, find_bgm, scan_media, scan_sfx
 from core.script import parse_script
 
 
@@ -20,6 +20,7 @@ class ProjectCheck:
     entries: list = field(default_factory=list)
     audio: str | None = None
     bgm: str | None = None
+    sfx: dict = field(default_factory=dict)          # {効果音ID: パス}（台本で使うものだけ）
     errors: list = field(default_factory=list)
     warnings: list = field(default_factory=list)
 
@@ -30,6 +31,11 @@ class ProjectCheck:
     @property
     def ok(self):
         return not self.errors
+
+
+def m_name(section):
+    """絵コンテ形式の素材名（S01 → M01、S03[a] → M03_1）"""
+    return f"M{section.scene[1:]}" + (f"_{ord(section.sub) - ord('a') + 1}" if section.sub else "")
 
 
 def match_media(scenes, media_files):
@@ -52,16 +58,16 @@ def match_media(scenes, media_files):
             mismatched.add(scene.id)
             if scene.has_markers:
                 errors.append(f"{scene.id}: 台本は [a] [b] … で分かれていますが、素材が"
-                              f"「{scene.id}a_〜」のように分かれていません（{', '.join(f.name for f in files)}）")
+                              f"「M{scene.id[1:]}_1」「{scene.id}a_〜」のように分かれていません（{', '.join(f.name for f in files)}）")
             else:
-                errors.append(f"{scene.id}: 素材が「{scene.id}a_〜」のように分かれていますが、"
+                errors.append(f"{scene.id}: 素材が「M{scene.id[1:]}_1」「{scene.id}a_〜」のように分かれていますが、"
                               f"台本に [a] [b] … のマーカーがありません（{', '.join(f.name for f in files)}）")
             continue
 
         for sec in scene.sections:
             f = by_key.get(sec.key)
             if f is None:
-                errors.append(f"台本の {sec.label} に対応する素材がありません（{sec.key}_〜 のファイルが必要）")
+                errors.append(f"台本の {sec.label} に対応する素材がありません（{m_name(sec)}.mp4 や {sec.key}_〜 のファイルが必要）")
                 continue
             used.add(f.key)
             entries.append(Entry(section=sec, media=f))
@@ -118,6 +124,19 @@ def check_project(folder):
 
     result.bgm, bgm_errors = find_bgm(os.path.join(folder, "bgm"))
     result.errors.extend(bgm_errors)
+
+    sfx_files, sfx_errors = scan_sfx(os.path.join(folder, "se"))
+    result.errors.extend(sfx_errors)
+    if script is not None and not script.errors and not sfx_errors:
+        used = script.sfx_ids
+        for sid in used:
+            if sid in sfx_files:
+                result.sfx[sid] = sfx_files[sid]
+            else:
+                result.errors.append(f"台本の効果音 {sid} のファイルがありません（se フォルダに {sid}_〜.wav などが必要）")
+        for sid, path in sorted(sfx_files.items()):
+            if sid not in used:
+                result.warnings.append(f"効果音 {os.path.basename(path)} は台本で使われていません")
 
     # 台本か素材の読み取りでエラーがあると照合結果が紛らわしくなるので、その場合は照合しない
     if script is not None and not script.errors and not media_errors:

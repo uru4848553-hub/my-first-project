@@ -1,9 +1,16 @@
-"""素材フォルダ（media/）と音声フォルダ（audio/）の読み取り。"""
+"""素材フォルダ（media/）・音声フォルダ（audio/）・効果音フォルダ（se/）の読み取り。
+
+素材の名前は次のどちらでもよい:
+- S01_説明.mp4 / S03a_説明.png（仕様書の形）
+- M01.mp4 / M01_説明.mp4 / M03_1.mp4 / M03_1_説明.png（絵コンテの形。M03_1 は台本の [a]、M03_2 は [b]）
+"""
 import os
 import re
 from dataclasses import dataclass
 
 MEDIA_NAME = re.compile(r"^S(\d{2})([a-z])?_(.+)\.([^.]+)$")
+MEDIA_NAME_M = re.compile(r"^M(\d{2})(?:_(\d{1,2})(?=[_.]))?(?:_(.*))?\.([^.]+)$", re.IGNORECASE)
+SFX_NAME = re.compile(r"^K(\d{2})(?:[_\-\s].*)?\.([^.]+)$", re.IGNORECASE)
 VIDEO_EXTS = {"mp4", "mov"}
 IMAGE_EXTS = {"png", "jpg", "jpeg"}
 AUDIO_EXTS = {"wav", "mp3", "m4a"}
@@ -27,6 +34,23 @@ class MediaFile:
         return self.scene + (self.sub or "")
 
 
+def parse_media_name(name):
+    """素材のファイル名 → (シーン "S03", サブ "a" or None, 拡張子)。命名ルールに合わなければ None"""
+    m = MEDIA_NAME.match(name)
+    if m:
+        return f"S{m.group(1)}", m.group(2), m.group(4)
+    m = MEDIA_NAME_M.match(name)
+    if m:
+        sub = None
+        if m.group(2):
+            n = int(m.group(2))
+            if not 1 <= n <= 26:
+                return None
+            sub = chr(ord("a") + n - 1)
+        return f"S{m.group(1)}", sub, m.group(4)
+    return None
+
+
 def _list_files(folder):
     names = []
     for entry in sorted(os.scandir(folder), key=lambda e: e.name):
@@ -46,11 +70,12 @@ def scan_media(media_dir):
 
     files = []
     for name in _list_files(media_dir):
-        m = MEDIA_NAME.match(name)
-        if not m:
-            errors.append(f"命名ルール違反: media/{name}（S01_説明.mp4 や S03a_説明.png の形式にしてください）")
+        parsed = parse_media_name(name)
+        if parsed is None:
+            errors.append(f"命名ルール違反: media/{name}（S01_説明.mp4・S03a_説明.png、または M01.mp4・M03_1.mp4 の形式にしてください）")
             continue
-        ext = m.group(4).lower()
+        scene, sub, ext = parsed
+        ext = ext.lower()
         if ext in VIDEO_EXTS:
             kind = "video"
         elif ext in IMAGE_EXTS:
@@ -58,8 +83,7 @@ def scan_media(media_dir):
         else:
             errors.append(f"対応していない拡張子: media/{name}（mp4, mov, png, jpg, jpeg のみ）")
             continue
-        files.append(MediaFile(path=os.path.join(media_dir, name),
-                               scene=f"S{m.group(1)}", sub=m.group(2), kind=kind))
+        files.append(MediaFile(path=os.path.join(media_dir, name), scene=scene, sub=sub, kind=kind))
 
     by_scene = {}
     for f in files:
@@ -100,3 +124,21 @@ def find_bgm(bgm_dir):
     if len(found) > 1:
         return None, [f"bgm フォルダの音楽ファイルは1本だけにしてください（{', '.join(found)}）"]
     return (os.path.join(bgm_dir, found[0]) if found else None), []
+
+
+def scan_sfx(se_dir):
+    """se/ の効果音（K01_〜.wav など。なくてもよい）を読み、({ID: パス}, エラー) を返す。"""
+    if not os.path.isdir(se_dir):
+        return {}, []
+    found, errors = {}, []
+    for name in _list_files(se_dir):
+        m = SFX_NAME.match(name)
+        if not m or m.group(2).lower() not in AUDIO_EXTS:
+            errors.append(f"命名ルール違反: se/{name}（K01_説明.wav のように K＋2桁の番号で始まる wav / mp3 / m4a にしてください）")
+            continue
+        sid = f"K{m.group(1)}"
+        if sid in found:
+            errors.append(f"{sid}: 効果音が複数あります（{os.path.basename(found[sid])}, {name}）")
+            continue
+        found[sid] = os.path.join(se_dir, name)
+    return found, errors

@@ -7,7 +7,7 @@ import unittest
 from core.align import SectionTiming
 from core.checks import check_project
 from core.config import DEFAULTS, ConfigError, load_config
-from core.plan import build_plan, report_rows, to_frames, write_plan
+from core.plan import build_plan, report_extra, report_rows, to_frames, write_plan
 from core.report import build_report
 
 SCRIPT = """\
@@ -140,6 +140,64 @@ class BuildPlanTest(unittest.TestCase):
         self.assertIn("| S02 | 0:04.00 | 0:02.50 | S02_graph.png |  |", report)
 
 
+class TelopSfxPlanTest(unittest.TestCase):
+    SCRIPT = """\
+## S01
+テロップ：一行目
+テロップ：二行目
+効果音：K01
+こんにちは。
+## S02
+効果音：K02 +1
+まず結論から。
+## S03
+テロップ：シーン全体
+[a] 画面を見てください。
+テロップ：a だけ
+効果音：K01
+[b] 結果です。
+効果音：K02 +10
+"""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        with open(os.path.join(self.dir, "script.md"), "w", encoding="utf-8") as f:
+            f.write(self.SCRIPT)
+        for sub, names in (("media", MEDIA), ("audio", ["narration.wav"]), ("se", ["K01_pon.wav", "K02_don.wav"])):
+            os.makedirs(os.path.join(self.dir, sub))
+            for n in names:
+                open(os.path.join(self.dir, sub, n), "wb").close()
+        self.check = check_project(self.dir)
+        self.assertEqual(self.check.errors, [])
+
+    def test_plan(self):
+        plan, errors, warnings = build_plan(self.check, timings(0.0, 4.0, 6.5, 9.0), 12.0, dict(DEFAULTS), 1.0,
+                                            sfx_durations={"K01": 1.0, "K02": 0.5})
+        self.assertEqual(errors, [])
+        # S03 のテロップはシーン全体（195〜360）、S03[a] だけのテロップは重なるので1段上
+        self.assertEqual([(t["label"], t["lines"], t["record_frame"], t["frames"], t["lane"]) for t in plan["telops"]], [
+            ("S01", ["一行目", "二行目"], 0, 120, 0),
+            ("S03", ["シーン全体"], 195, 165, 0),
+            ("S03[a]", ["a だけ"], 195, 75, 1),
+        ])
+        # 効果音：頭から（+秒）。長さはファイルの長さ。はみ出すもの（S03[b] +10秒）は置かずに警告
+        self.assertEqual([(x["label"], x["id"], x["record_frame"], x["frames"], x["lane"]) for x in plan["sfx"]], [
+            ("S01", "K01", 0, 30, 0),
+            ("S02", "K02", 150, 15, 0),
+            ("S03[a]", "K01", 195, 30, 0),
+        ])
+        self.assertTrue(any("S03[b]: 効果音 K02" in w for w in warnings), warnings)
+        extra = "\n".join(report_extra(plan))
+        self.assertIn("| S01 | 0.00秒 | 4.00秒 | 一行目 / 二行目 |", extra)
+        self.assertIn("| S02 | K02_don.wav | 5.00秒 | 0.50秒 |", extra)
+
+    def test_overlapping_sfx_use_next_lane(self):
+        plan, _, _ = build_plan(self.check, timings(0.0, 0.5, 6.5, 9.0), 12.0, dict(DEFAULTS), 1.0,
+                                sfx_durations={"K01": 3.0, "K02": 3.0})
+        self.assertEqual([(x["label"], x["lane"]) for x in plan["sfx"]], [("S01", 0), ("S02", 1), ("S03[a]", 0)])
+
+
 class ConfigTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -160,7 +218,8 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(load_config()["fps"], 30)
 
     def test_invalid(self):
-        for text in ('{"fps": 0}', '{"sizing": "stretch"}', '{"width": "1080"}', '{broken'):
+        for text in ('{"fps": 0}', '{"sizing": "stretch"}', '{"width": "1080"}', '{broken',
+                     '{"telop_size": 0}', '{"telop_y": 1.5}', '{"telop_max_width": "0.9"}'):
             with self.subTest(text=text):
                 self.write(text)
                 with self.assertRaises(ConfigError):

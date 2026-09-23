@@ -4,5 +4,12 @@
   "height": 1920,
   "sizing": "fit",
   "whisper_model": "large-v3",
-  "low_confidence": 0.5
+  "low_confidence": 0.5,
+  "telop_font": "",
+  "telop_size": 80,
+  "telop_y": 0.25,
+  "telop_color": "#FFFFFF",
+  "telop_stroke_color": "#000000",
+  "telop_stroke_width": 8,
+  "telop_max_width": 0.9
 }
