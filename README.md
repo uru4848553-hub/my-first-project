@@ -1,6 +1,6 @@
 # Resolve自動配置ツール
 
-使い方は [取扱説明書.md](取扱説明書.md)、仕様は [CLAUDE.md](CLAUDE.md) を参照。現在は **フェーズ0（環境構築と Resolve 接続テスト）** まで。
+使い方は [取扱説明書.md](取扱説明書.md)、仕様は [CLAUDE.md](CLAUDE.md) を参照。フェーズ0〜5（環境構築から Resolve への配置、通し実行）まで実装済み。
 
 ## 保存先 `G:\@Auto_Davinch-Cloude` に取り込む
 
