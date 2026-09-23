@@ -111,3 +111,4 @@ Resolveを起動し、プロジェクトを開いた状態で実行する。
 
 ## 進捗
 - フェーズ0：実装済み（`setup.ps1`、`tools/check_env.py`、`tools/resolve_test.py`、`resolve_connect.py`）。仮想環境は C:\AutoDavinch\venv（G: が NTFS でなく PyTorch を入れられないため）。ユーザーのWindows環境での動作確認待ち
+- ユーザーのGPUは GeForce GTX 1070（8GB、sm_61）。PyTorch は cu126 版が必要（cu128 版は sm_61 非対応）。fp16 が遅い世代なので、フェーズ2で Whisper の fp16/fp32 と速度・VRAM を確認すること

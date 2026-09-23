@@ -37,7 +37,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 - ユーザー環境変数 `RESOLVE_SCRIPT_API` / `RESOLVE_SCRIPT_LIB` / `PYTHONPATH` の設定
 - `tools\check_env.py` による確認
 
-PyTorch が CUDA を認識しない（古いNVIDIAドライバ）場合は `.\setup.ps1 -CudaIndex cu126` で再実行。
+PyTorch は既定で CUDA 12.6 版（GTX 10xx〜RTX 40xx 対応）。RTX 50xx の場合は `.\setup.ps1 -CudaIndex cu128` で再実行。
 
 ### 3. Whisper large-v3 の読み込み確認（初回は約3GBダウンロード）
 ```powershell

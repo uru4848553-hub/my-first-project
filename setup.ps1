@@ -2,7 +2,7 @@
 # 使い方（このフォルダで）:
 #   powershell -ExecutionPolicy Bypass -File .\setup.ps1
 # オプション:
-#   -CudaIndex cu126   PyTorch の CUDA 版を変える（既定 cu128。古いNVIDIAドライバで失敗する場合に指定）
+#   -CudaIndex cu128   PyTorch の CUDA 版を変える（既定 cu126。GTX 10xx〜RTX 40xx は cu126、RTX 50xx は cu128）
 #   -VenvPath <パス>   仮想環境の作成先（既定 C:\AutoDavinch\venv）
 #   -SkipEnvVars       Resolve 用の環境変数を設定しない
 #
@@ -10,7 +10,7 @@
 # PyTorch のインストールが "No space left on device" で失敗する。
 
 param(
-    [string]$CudaIndex = "cu128",
+    [string]$CudaIndex = "cu126",
     [string]$VenvPath = "C:\AutoDavinch\venv",
     [switch]$SkipEnvVars
 )
@@ -54,6 +54,12 @@ Set-Content -Path (Join-Path $PSScriptRoot "run.bat") -Encoding Oem -Value "@`"$
 
 # 3. CUDA 版 PyTorch → stable-ts
 Step "CUDA 版 PyTorch ($CudaIndex) のインストール"
+# 別の CUDA 版が入っていると pip は「インストール済み」とみなすので、先に削除する
+$current = & $py -c "import importlib.util as u, importlib.metadata as m; print(m.version('torch') if u.find_spec('torch') else '')"
+if ($current -and ($current -notlike "*+$CudaIndex")) {
+    Write-Host "torch $current を削除して $CudaIndex 版に入れ替えます"
+    & $py -m pip uninstall -y torch torchaudio
+}
 & $py -m pip install torch torchaudio --index-url "https://download.pytorch.org/whl/$CudaIndex"
 if ($LASTEXITCODE -ne 0) { Write-Host "PyTorch のインストールに失敗しました。" -ForegroundColor Red; exit 1 }
 

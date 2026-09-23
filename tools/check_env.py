@@ -48,7 +48,23 @@ def check_torch():
     if not torch.cuda.is_available():
         report(False, "PyTorch CUDA", f"torch {torch.__version__} だが CUDA が使えません（CPU版が入っている可能性）")
         return False
-    report(True, "PyTorch CUDA", f"torch {torch.__version__} / CUDA {torch.version.cuda} / {torch.cuda.get_device_name(0)}")
+
+    name = torch.cuda.get_device_name(0)
+    major, minor = torch.cuda.get_device_capability(0)
+    arch = f"sm_{major}{minor}"
+    if arch not in torch.cuda.get_arch_list():
+        report(False, "PyTorch CUDA",
+               f"torch {torch.__version__} は {name}（{arch}）に対応していません → setup.ps1 を -CudaIndex cu126 で再実行")
+        return False
+
+    # 認識だけでなく、実際に GPU で計算できるか確認する
+    try:
+        x = torch.ones(256, 256, device="cuda")
+        (x @ x).sum().item()
+    except Exception as e:
+        report(False, "PyTorch CUDA", f"{name} で計算できません: {e}")
+        return False
+    report(True, "PyTorch CUDA", f"torch {torch.__version__} / CUDA {torch.version.cuda} / {name}（{arch}）で計算OK")
     return True
 
 
