@@ -110,4 +110,4 @@ Resolveを起動し、プロジェクトを開いた状態で実行する。
 - テロップ、BGM、効果音、トランジション、エフェクト
 
 ## 進捗
-- フェーズ0：実装済み（`setup.ps1`、`tools/check_env.py`、`tools/resolve_test.py`、`resolve_connect.py`）。ユーザーのWindows環境での動作確認待ち
+- フェーズ0：実装済み（`setup.ps1`、`tools/check_env.py`、`tools/resolve_test.py`、`resolve_connect.py`）。仮想環境は C:\AutoDavinch\venv（G: が NTFS でなく PyTorch を入れられないため）。ユーザーのWindows環境での動作確認待ち

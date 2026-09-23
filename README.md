@@ -31,7 +31,8 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
 これで次が行われる:
-- `.venv`（Python 3.11 の仮想環境）作成
+- 仮想環境（Python 3.11）を `C:\AutoDavinch\venv` に作成し、それを呼び出す `run.bat` を生成
+  （G: が NTFS でないため仮想環境は C: に置く。場所は `-VenvPath` で変更可）
 - CUDA 版 PyTorch と stable-ts のインストール
 - ユーザー環境変数 `RESOLVE_SCRIPT_API` / `RESOLVE_SCRIPT_LIB` / `PYTHONPATH` の設定
 - `tools\check_env.py` による確認
@@ -40,13 +41,13 @@ PyTorch が CUDA を認識しない（古いNVIDIAドライバ）場合は `.\se
 
 ### 3. Whisper large-v3 の読み込み確認（初回は約3GBダウンロード）
 ```powershell
-.venv\Scripts\python tools\check_env.py --load-model
+.\run.bat tools\check_env.py --load-model
 ```
 
 ### 4. Resolve 接続テスト
 Resolve を起動してプロジェクトを開いた状態で:
 ```powershell
-.venv\Scripts\python tools\resolve_test.py
+.\run.bat tools\resolve_test.py
 ```
 成功するとプロジェクト名などが表示される:
 ```

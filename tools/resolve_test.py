@@ -1,7 +1,7 @@
 """フェーズ0：Resolve API 接続テスト。現在のプロジェクト名を表示する。
 
 使い方（Resolve を起動してプロジェクトを開いた状態で）:
-    .venv\\Scripts\\python tools\\resolve_test.py
+    run.bat tools\\resolve_test.py
 """
 import os
 import sys

@@ -1,8 +1,8 @@
 """フェーズ0：環境チェック（Python / ffmpeg / CUDA版PyTorch / stable-ts）。
 
 使い方:
-    .venv\\Scripts\\python tools\\check_env.py              # 基本チェック
-    .venv\\Scripts\\python tools\\check_env.py --load-model # Whisper モデルを実際にGPUに読み込む（初回は約3GBダウンロード）
+    run.bat tools\\check_env.py              # 基本チェック
+    run.bat tools\\check_env.py --load-model # Whisper モデルを実際にGPUに読み込む（初回は約3GBダウンロード）
 """
 import argparse
 import json

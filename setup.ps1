@@ -3,10 +3,15 @@
 #   powershell -ExecutionPolicy Bypass -File .\setup.ps1
 # オプション:
 #   -CudaIndex cu126   PyTorch の CUDA 版を変える（既定 cu128。古いNVIDIAドライバで失敗する場合に指定）
+#   -VenvPath <パス>   仮想環境の作成先（既定 C:\AutoDavinch\venv）
 #   -SkipEnvVars       Resolve 用の環境変数を設定しない
+#
+# 仮想環境は NTFS のドライブに置く。FAT32/exFAT などのドライブに置くと
+# PyTorch のインストールが "No space left on device" で失敗する。
 
 param(
     [string]$CudaIndex = "cu128",
+    [string]$VenvPath = "C:\AutoDavinch\venv",
     [switch]$SkipEnvVars
 )
 
@@ -35,12 +40,17 @@ if ($pyver -notmatch " 64$") {
 }
 
 # 2. 仮想環境
-Step "仮想環境 .venv の作成"
-if (-not (Test-Path ".venv\Scripts\python.exe")) {
-    & py -3.11 -m venv .venv
+Step "仮想環境の作成 ($VenvPath)"
+$py = Join-Path $VenvPath "Scripts\python.exe"
+if (-not (Test-Path $py)) {
+    & py -3.11 -m venv $VenvPath
+    if ($LASTEXITCODE -ne 0) { Write-Host "仮想環境の作成に失敗しました。" -ForegroundColor Red; exit 1 }
 }
-$py = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 & $py -m pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) { Write-Host "pip の更新に失敗しました。" -ForegroundColor Red; exit 1 }
+
+# このフォルダから仮想環境の Python を呼ぶための run.bat
+Set-Content -Path (Join-Path $PSScriptRoot "run.bat") -Encoding Oem -Value "@`"$py`" %*"
 
 # 3. CUDA 版 PyTorch → stable-ts
 Step "CUDA 版 PyTorch ($CudaIndex) のインストール"
@@ -96,4 +106,4 @@ Step "環境チェック"
 & $py tools\check_env.py
 
 Write-Host "`n次に Resolve を起動してプロジェクトを開き、接続テストを実行してください:" -ForegroundColor Green
-Write-Host "  .venv\Scripts\python tools\resolve_test.py"
+Write-Host "  .\run.bat tools\resolve_test.py"
