@@ -22,7 +22,8 @@ git checkout -f -B main FETCH_HEAD
 DaVinci Resolve Studio → 環境設定 → システム → 一般 → 「外部スクリプトに使用」を **ローカル** にして Resolve を再起動。
 
 ### 2. 環境構築
-Python 3.11 64bit が未インストールなら先に入れる（`winget install Python.Python.3.11`）。
+Python 3.13 64bit が未インストールなら先に入れる（`winget install Python.Python.3.13`）。
+Resolve 21 の fusionscript は Python 3.13 向けで、3.11 では読み込めない。
 ffmpeg が未インストールなら `winget install Gyan.FFmpeg`。
 
 ```powershell
@@ -31,7 +32,7 @@ powershell -ExecutionPolicy Bypass -File .\setup.ps1
 ```
 
 これで次が行われる:
-- 仮想環境（Python 3.11）を `C:\AutoDavinch\venv` に作成し、それを呼び出す `run.bat` を生成
+- 仮想環境（Python 3.13）を `C:\AutoDavinch\venv` に作成し、それを呼び出す `run.bat` を生成
   （G: が NTFS でないため仮想環境は C: に置く。場所は `-VenvPath` で変更可）
 - CUDA 版 PyTorch と stable-ts のインストール
 - ユーザー環境変数 `RESOLVE_SCRIPT_API` / `RESOLVE_SCRIPT_LIB` / `PYTHONPATH` の設定

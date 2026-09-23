@@ -56,7 +56,7 @@ def get_resolve(log=lambda msg: None):
     except ImportError as e:
         raise ResolveConnectionError(
             f"DaVinciResolveScript を読み込めません: {e}\n"
-            "Python が 3.11 64bit か確認してください。"
+            "Python が 3.13 64bit か確認してください（Resolve 21 は 3.11 では動きません）。"
         ) from e
 
     log("Resolve に接続中...")

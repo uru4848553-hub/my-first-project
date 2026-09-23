@@ -7,7 +7,7 @@ DaVinci Resolve Studio上に自動生成する。人間は最終確認だけを�
 ## 環境
 - Windows / NVIDIA GPU あり
 - DaVinci Resolve Studio 21.0.3（Resolveの自動アップデートはしない）
-- Python 3.11 64bit（python.org版。3.12以降はResolveのスクリプトモジュールが動かない可能性があるため使わない）
+- Python 3.13 64bit（python.org版）。当初は3.11の予定だったが、Resolve 21.0.3 の fusionscript.dll は 3.13 向けで、3.11 では読み込めない（アクセス違反／初期化失敗）ことを実機で確認したため変更
 - ffmpeg
 - 文字起こし・アライメント：stable-ts（Whisper large-v3、CUDA）
 
@@ -97,7 +97,7 @@ Resolveを起動し、プロジェクトを開いた状態で実行する。
 
 ## 実装の進め方（Claude Codeへ）
 各フェーズを完了・動作確認してから次へ進むこと。
-- フェーズ0：環境構築（Python 3.11、ffmpeg、CUDA版PyTorch、stable-ts）と、Resolve APIへの接続テスト（プロジェクト名を取得して表示）
+- フェーズ0：環境構築（Python 3.13、ffmpeg、CUDA版PyTorch、stable-ts）と、Resolve APIへの接続テスト（プロジェクト名を取得して表示）
   - Resolve側：環境設定 → システム → 一般 → 「外部スクリプトに使用」を「ローカル」
   - 環境変数：`RESOLVE_SCRIPT_API`、`RESOLVE_SCRIPT_LIB`、`PYTHONPATH` を Resolve の Developer\Scripting の README に従って設定
 - フェーズ1：台本解析・素材照合・エラーチェック（Resolve・音声処理なしで単体テスト可能にする）
@@ -110,5 +110,5 @@ Resolveを起動し、プロジェクトを開いた状態で実行する。
 - テロップ、BGM、効果音、トランジション、エフェクト
 
 ## 進捗
-- フェーズ0：実装済み（`setup.ps1`、`tools/check_env.py`、`tools/resolve_test.py`、`resolve_connect.py`）。仮想環境は C:\AutoDavinch\venv（G: が NTFS でなく PyTorch を入れられないため）。ユーザーのWindows環境での動作確認待ち
+- フェーズ0：実装済み（`setup.ps1`、`tools/check_env.py`、`tools/resolve_test.py`、`resolve_connect.py`）。仮想環境は C:\AutoDavinch\venv（G: が NTFS でなく PyTorch を入れられないため）。Python 3.13 で Resolve 21.0.3.7 への接続（プロジェクト名取得）は確認済み。3.13 の仮想環境で PyTorch/stable-ts の再確認待ち
 - ユーザーのGPUは GeForce GTX 1070（8GB、sm_61）。PyTorch は cu126 版が必要（cu128 版は sm_61 非対応）。fp16 が遅い世代なので、フェーズ2で Whisper の fp16/fp32 と速度・VRAM を確認すること

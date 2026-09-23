@@ -25,8 +25,8 @@ def report(ok, name, detail):
 def check_python():
     ver = sys.version.split()[0]
     bits = struct.calcsize("P") * 8
-    ok = sys.version_info[:2] == (3, 11) and bits == 64
-    report(ok, "Python", f"{ver} {bits}bit ({sys.executable})" + ("" if ok else " → 3.11 64bit が必要です"))
+    ok = sys.version_info[:2] == (3, 13) and bits == 64
+    report(ok, "Python", f"{ver} {bits}bit ({sys.executable})" + ("" if ok else " → 3.13 64bit が必要です（Resolve 21 の要件）"))
 
 
 def check_ffmpeg():

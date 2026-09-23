@@ -4,6 +4,7 @@
 # オプション:
 #   -CudaIndex cu128   PyTorch の CUDA 版を変える（既定 cu126。GTX 10xx〜RTX 40xx は cu126、RTX 50xx は cu128）
 #   -VenvPath <パス>   仮想環境の作成先（既定 C:\AutoDavinch\venv）
+#   -PythonVersion     使う Python（既定 3.13。Resolve 21 の fusionscript は 3.13 向けで、3.11 では読み込めない）
 #   -SkipEnvVars       Resolve 用の環境変数を設定しない
 #
 # 仮想環境は NTFS のドライブに置く。FAT32/exFAT などのドライブに置くと
@@ -12,6 +13,7 @@
 param(
     [string]$CudaIndex = "cu126",
     [string]$VenvPath = "C:\AutoDavinch\venv",
+    [string]$PythonVersion = "3.13",
     [switch]$SkipEnvVars
 )
 
@@ -20,30 +22,38 @@ Set-Location -Path $PSScriptRoot
 
 function Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
 
-# 1. Python 3.11
-Step "Python 3.11 の確認"
+# 1. Python
+Step "Python $PythonVersion の確認"
 try {
-    $pyver = & py -3.11 -c "import sys,struct;print(sys.version.split()[0], struct.calcsize('P')*8)"
+    $pyver = & py -$PythonVersion -c "import sys,struct;print(sys.version.split()[0], struct.calcsize('P')*8)"
 } catch {
     $pyver = $null
 }
 if (-not $pyver) {
-    Write-Host "Python 3.11 が見つかりません。次のどちらかでインストールしてから再実行してください:" -ForegroundColor Red
-    Write-Host "  winget install Python.Python.3.11"
-    Write-Host "  または https://www.python.org/downloads/ から 3.11 系の Windows installer (64-bit)"
+    Write-Host "Python $PythonVersion が見つかりません。次のどちらかでインストールしてから再実行してください:" -ForegroundColor Red
+    Write-Host "  winget install Python.Python.$PythonVersion"
+    Write-Host "  または https://www.python.org/downloads/ から $PythonVersion 系の Windows installer (64-bit)"
     exit 1
 }
 Write-Host "Python $pyver"
 if ($pyver -notmatch " 64$") {
-    Write-Host "64bit 版の Python 3.11 が必要です。" -ForegroundColor Red
+    Write-Host "64bit 版の Python $PythonVersion が必要です。" -ForegroundColor Red
     exit 1
 }
 
 # 2. 仮想環境
 Step "仮想環境の作成 ($VenvPath)"
 $py = Join-Path $VenvPath "Scripts\python.exe"
+# 既存の仮想環境の Python バージョンが違えば作り直す
+if (Test-Path $py) {
+    $venvver = & $py -c "import sys;print('%d.%d' % sys.version_info[:2])"
+    if ($venvver -ne $PythonVersion) {
+        Write-Host "既存の仮想環境は Python $venvver なので削除して作り直します"
+        Remove-Item -Recurse -Force $VenvPath
+    }
+}
 if (-not (Test-Path $py)) {
-    & py -3.11 -m venv $VenvPath
+    & py -$PythonVersion -m venv $VenvPath
     if ($LASTEXITCODE -ne 0) { Write-Host "仮想環境の作成に失敗しました。" -ForegroundColor Red; exit 1 }
 }
 & $py -m pip install --upgrade pip

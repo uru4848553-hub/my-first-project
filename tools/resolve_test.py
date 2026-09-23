@@ -12,8 +12,8 @@ from resolve_connect import ResolveConnectionError, get_resolve  # noqa: E402
 
 
 def main():
-    if sys.version_info[:2] != (3, 11):
-        print(f"[警告] Python {sys.version.split()[0]} で実行中です（推奨は 3.11）")
+    if sys.version_info[:2] != (3, 13):
+        print(f"[警告] Python {sys.version.split()[0]} で実行中です（Resolve 21 は 3.13 が必要）")
 
     try:
         resolve = get_resolve(log=lambda msg: print(f"     {msg}", flush=True))
