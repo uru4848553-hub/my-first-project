@@ -115,7 +115,7 @@ Resolveを起動し、プロジェクトを開いた状態で実行する。
   - PC には Python 3.13 と 3.11 が入っている。`py` の既定は 3.13
   - テスト用プロジェクト「Short-Auto0923」のフレームレートは 24。フェーズ4では 30fps のタイムラインを確実に作れるか（プロジェクト設定の timelineFrameRate を含めて）確認すること
 - ユーザーのGPUは GeForce GTX 1070（8GB、sm_61）。PyTorch は cu126 版が必要（cu128 版は sm_61 非対応）。fp16 が遅い世代なので、フェーズ2で Whisper の fp16/fp32 と速度・VRAM を確認すること
-- フェーズ1：実装済み（`autoedit.py`、`core/script.py` 台本解析、`core/media.py` 素材・音声の読み取り、`core/checks.py` 照合とチェック、`core/report.py` report.md 出力、`tests/` 単体テスト41件、`samples/動画_サンプル`）。ユーザーのWindows環境での確認待ち
+- フェーズ1：実装済み（`autoedit.py`、`core/script.py` 台本解析、`core/media.py` 素材・音声の読み取り、`core/checks.py` 照合とチェック、`core/report.py` report.md 出力、`tests/` 単体テスト41件、`samples/動画_サンプル`）。**完了**：Windows 実機で単体テスト41件OK、サンプルフォルダでチェックOK（3シーン/4セクション）、存在しないフォルダ指定でエラー表示を確認
   - 仕様に明記がなく決めたこと：最初のシーン見出しより前の原稿・シーン番号の重複・原稿が空のシーン/マーカー・マーカーが [a] から連番でない・マーカー付きシーンで最初のマーカーより前に原稿がある → エラー。シーン番号が昇順でない → 警告（台本の順に並べる）。`# タイトル` など `## Sxx` 以外の `#` 行は無視。`## S1` `# S01` など見出しのつもりで書式が違うものはエラー
   - 素材：拡張子の大文字小文字は区別しない。media/ のサブフォルダ（_freeze など）と Thumbs.db・desktop.ini・ドットファイルは無視。同じシーン/マーカーに素材が2つ以上 → エラー
   - script.md は UTF-8（BOMあり/なし）。Shift_JIS なら読んだうえで警告
