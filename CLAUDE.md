@@ -110,5 +110,8 @@ Resolveを起動し、プロジェクトを開いた状態で実行する。
 - テロップ、BGM、効果音、トランジション、エフェクト
 
 ## 進捗
-- フェーズ0：実装済み（`setup.ps1`、`tools/check_env.py`、`tools/resolve_test.py`、`resolve_connect.py`）。仮想環境は C:\AutoDavinch\venv（G: が NTFS でなく PyTorch を入れられないため）。Python 3.13 で Resolve 21.0.3.7 への接続（プロジェクト名取得）は確認済み。3.13 の仮想環境で PyTorch/stable-ts の再確認待ち
+- フェーズ0：**完了**（`setup.ps1`、`tools/check_env.py`、`tools/resolve_test.py`、`resolve_connect.py`）。実機で確認済み：Python 3.13.5 / ffmpeg 9.0.2 / torch 2.14.0+cu126 で GPU 計算OK / stable-ts 2.19.1 / Whisper large-v3 を GPU に読み込みOK / Resolve Studio 21.0.3.7 に接続しプロジェクト名取得OK
+  - 仮想環境は C:\AutoDavinch\venv（G: が NTFS でなく PyTorch を入れられないため）。実行は `.\run.bat <スクリプト>`
+  - PC には Python 3.13 と 3.11 が入っている。`py` の既定は 3.13
+  - テスト用プロジェクト「Short-Auto0923」のフレームレートは 24。フェーズ4では 30fps のタイムラインを確実に作れるか（プロジェクト設定の timelineFrameRate を含めて）確認すること
 - ユーザーのGPUは GeForce GTX 1070（8GB、sm_61）。PyTorch は cu126 版が必要（cu128 版は sm_61 非対応）。fp16 が遅い世代なので、フェーズ2で Whisper の fp16/fp32 と速度・VRAM を確認すること
