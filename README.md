@@ -55,3 +55,23 @@ Resolve を起動してプロジェクトを開いた状態で:
 [OK] 接続成功: DaVinci Resolve Studio 21.0.3...
      プロジェクト名   : ○○○
 ```
+
+## フェーズ1：台本解析・素材照合・エラーチェック
+
+```powershell
+.\run.bat autoedit.py "D:\動画\動画_AI副業の始め方"
+```
+
+- `script.md` / `media/` / `audio/` を読み、台本のセクション（S01, S03[a] …）と素材を対応付ける
+- エラー・警告と対応表を `output\report.md` に出力する。エラーがあれば終了コード 1
+- アライメントと Resolve への配置はまだ行わない（フェーズ2以降）
+
+サンプル（中身が空のダミーファイル）で試す:
+```powershell
+.\run.bat autoedit.py samples\動画_サンプル
+```
+
+単体テスト（Resolve・音声処理なしで動く）:
+```powershell
+.\run.bat -m unittest discover -s tests -t . -v
+```
