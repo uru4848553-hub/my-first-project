@@ -4,7 +4,7 @@
     run.bat autoedit.py "D:\\動画\\動画_AI副業の始め方"
     run.bat autoedit.py "D:\\動画\\動画_AI副業の始め方" --check-only   # フェーズ1のチェックだけ
 
-現在はフェーズ2（強制アライメントと output/plan.json の生成）まで。結果は output/report.md にも出力する。
+現在はフェーズ3（強制アライメント・output/plan.json の生成・尺調整）まで。結果は output/report.md にも出力する。
 """
 import argparse
 import os
@@ -55,6 +55,7 @@ def main(argv=None):
     # フェーズ2：強制アライメントと plan.json
     from core.align import build_text, load_model, run_alignment, save_words, section_timings
     from core.ffmpeg import FFmpegError, probe_duration
+    from core.fit import apply_fit
     from core.plan import build_plan, report_rows, write_plan
 
     try:
@@ -84,6 +85,12 @@ def main(argv=None):
     plan, plan_errors, plan_warnings = build_plan(check, timings, duration, config, ratio)
     check.errors.extend(plan_errors)
     check.warnings.extend(plan_warnings)
+
+    # フェーズ3：尺調整（動画が足りない分は最終フレームの静止画で埋める）
+    if not plan_errors:
+        fit_errors, fit_warnings = apply_fit(plan)
+        check.errors.extend(fit_errors)
+        check.warnings.extend(fit_warnings)
     plan_path = write_plan(plan, check.folder)
     report_path = write_report(check, report_rows(plan))
 
@@ -97,8 +104,9 @@ def main(argv=None):
     fps = plan["fps"]
     print()
     for s in plan["sections"]:
-        print(f"  {s['label']:<7} {s['start_frame'] / fps:7.2f}秒〜  {s['duration_frames'] / fps:6.2f}秒  {s['media']['name']}")
-    print("\n（フェーズ3以降の尺調整・Resolve への配置は未実装です）")
+        freeze = f"（うち静止 {s['freeze_frames'] / fps:.2f}秒）" if s["freeze_frames"] else ""
+        print(f"  {s['label']:<7} {s['start_frame'] / fps:7.2f}秒〜  {s['duration_frames'] / fps:6.2f}秒  {s['media']['name']}{freeze}")
+    print("\n（フェーズ4の Resolve への配置は未実装です）")
     return 0
 
 
