@@ -16,7 +16,7 @@ def main():
         print(f"[警告] Python {sys.version.split()[0]} で実行中です（推奨は 3.11）")
 
     try:
-        resolve = get_resolve()
+        resolve = get_resolve(log=lambda msg: print(f"     {msg}", flush=True))
     except ResolveConnectionError as e:
         print(f"[NG] {e}")
         return 1

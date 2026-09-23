@@ -30,9 +30,14 @@ def _prepare_environment():
     return api, lib, modules
 
 
-def get_resolve():
-    """起動中の Resolve オブジェクトを返す。失敗時は原因付きで ResolveConnectionError。"""
+def get_resolve(log=lambda msg: None):
+    """起動中の Resolve オブジェクトを返す。失敗時は原因付きで ResolveConnectionError。
+
+    log: 進行状況を受け取る関数（接続途中で止まった箇所を特定するため）
+    """
     api, lib, modules = _prepare_environment()
+    log(f"RESOLVE_SCRIPT_LIB = {lib}")
+    log(f"Modules            = {modules}")
 
     if not os.path.isfile(lib):
         raise ResolveConnectionError(
@@ -45,6 +50,7 @@ def get_resolve():
             "RESOLVE_SCRIPT_API の設定を確認してください。"
         )
 
+    log("DaVinciResolveScript を読み込み中...")
     try:
         import DaVinciResolveScript as dvr_script
     except ImportError as e:
@@ -53,6 +59,7 @@ def get_resolve():
             "Python が 3.11 64bit か確認してください。"
         ) from e
 
+    log("Resolve に接続中...")
     resolve = dvr_script.scriptapp("Resolve")
     if resolve is None:
         raise ResolveConnectionError(
