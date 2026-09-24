@@ -3,3 +3,5 @@
 stable-ts
 # テロップの画像づくり
 pillow
+# 絵コンテ画像から台本を作る（Claude API）
+anthropic

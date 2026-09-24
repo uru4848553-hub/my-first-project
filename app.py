@@ -13,7 +13,7 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
@@ -25,6 +25,16 @@ SETTINGS = os.path.join(ROOT, "app_settings.json")
 AUDIO_TYPES = [("音声", "*.wav *.mp3 *.m4a"), ("すべて", "*.*")]
 MEDIA_TYPES = [("動画・画像", "*.mp4 *.mov *.png *.jpg *.jpeg"), ("すべて", "*.*")]
 SCRIPT_TYPES = [("台本", "*.md *.txt"), ("すべて", "*.*")]
+IMAGE_TYPES = [("絵コンテの画像", "*.png *.jpg *.jpeg *.webp"), ("すべて", "*.*")]
+API_KEY_HELP = """\
+絵コンテの画像を読み取るには、Claude の API キーが必要です（1回 数円〜十数円程度の料金がかかります）。
+
+API キーの作り方：
+1. https://console.anthropic.com/ にログイン（アカウントがなければ作成）
+2. 「Billing」でクレジットを購入（最低 5 ドル程度）
+3. 「API Keys」→「Create Key」で作成し、表示されたキー（sk-ant- で始まる）をコピー
+
+キーはこのパソコンの app_settings.json に保存されます（他の人に見せないでください）。"""
 ALL_TYPES = [("動画・画像・効果音", "*.mp4 *.mov *.png *.jpg *.jpeg *.wav *.mp3 *.m4a"), ("すべて", "*.*")]
 EXAMPLE = """\
 ## S01
@@ -139,6 +149,8 @@ class App:
         bar = ttk.Frame(step2)
         bar.grid(row=0, column=0, sticky="ew")
         ttk.Button(bar, text="ファイルから読み込む…", command=self.load_script).pack(side="left")
+        self.storyboard_btn = ttk.Button(bar, text="絵コンテ画像から作る…", command=self.from_storyboard)
+        self.storyboard_btn.pack(side="left", padx=(6, 0))
         ttk.Button(bar, text="書き方の例を入れる", command=self.insert_example).pack(side="left", padx=6)
         ttk.Button(bar, text="書き方", command=lambda: messagebox.showinfo("台本の書き方", HELP)).pack(side="left")
         self.script_status = ttk.Label(bar, text="", foreground="#666")
@@ -306,6 +318,70 @@ class App:
         self.script.insert("1.0", text)
         self.refresh_sections()
 
+    # --- 絵コンテ画像から台本を作る -------------------------------------
+
+    def _api_key(self, ask=False):
+        key = self.settings.get("api_key") or os.environ.get("ANTHROPIC_API_KEY", "")
+        if key and not ask:
+            return key
+        key = simpledialog.askstring("Claude の API キー", API_KEY_HELP + "\n\nAPI キーを貼り付けてください：",
+                                     parent=self.root, show="*", initialvalue=self.settings.get("api_key", ""))
+        if key and key.strip():
+            self.settings["api_key"] = key.strip()
+            save_settings(self.settings)
+            return key.strip()
+        return None
+
+    def from_storyboard(self):
+        if self.running:
+            return
+        paths = filedialog.askopenfilenames(title="絵コンテの画像を選ぶ（複数ページなら順番に全部）", filetypes=IMAGE_TYPES)
+        if not paths:
+            return
+        key = self._api_key()
+        if not key:
+            return
+        if self.script_text().strip() and not messagebox.askyesno(
+                "確認", "今の台本を、絵コンテから作った台本に置き換えます。よろしいですか？"):
+            return
+        self._set_running(True)
+        self.status.set("絵コンテを読み取っています（30秒〜1分ほど）...")
+        paths = [os.path.normpath(p) for p in sorted(paths, key=lambda p: os.path.basename(p).lower())]
+        threading.Thread(target=self._storyboard_work, args=(paths, key), daemon=True).start()
+
+    def _storyboard_work(self, paths, key):
+        from core.storyboard import StoryboardError, convert
+        try:
+            self._post("storyboard", ("ok", convert(paths, api_key=key)))
+        except StoryboardError as e:
+            self._post("storyboard", ("error", str(e)))
+        except Exception as e:  # 想定外の失敗も画面に出す
+            self._post("storyboard", ("error", f"想定外のエラー: {e}"))
+
+    def _storyboard_done(self, result):
+        self._set_running(False)
+        kind, value = result
+        if kind == "error":
+            self._update_status()
+            if "API キー" in value and messagebox.askyesno("API キー", value + "\n\nAPI キーを入力し直しますか？"):
+                self._api_key(ask=True)
+            elif "API キー" not in value:
+                messagebox.showerror("絵コンテを読み取れませんでした", value)
+            return
+        script, corrections, problems = value
+        self.script.delete("1.0", "end")
+        self.script.insert("1.0", script)
+        self.refresh_sections()
+        lines = ["絵コンテから台本を作りました。",
+                 "**ナレーション・テロップの文字が正しいか、必ず確認してください。**",
+                 "（ナレーション音声は、この台本の文章で作ってください）"]
+        if corrections:
+            lines += ["", "AI が直した・推測した箇所："] + [f"・{c}" for c in corrections]
+        if problems:
+            lines += ["", "台本の問題（直してください）："] + [f"・{p}" for p in problems]
+        (messagebox.showwarning if problems else messagebox.showinfo)("絵コンテから台本を作りました",
+                                                                   "\n".join(lines).replace("**", ""))
+
     def insert_example(self):
         if self.script_text().strip() and not messagebox.askyesno("確認", "今の台本を消して、例に置き換えますか？"):
             return
@@ -432,6 +508,8 @@ class App:
                     self.status.set(value)
                 elif kind == "folder":
                     self.last_folder = value
+                elif kind == "storyboard":
+                    self._storyboard_done(value)
                 elif kind == "done":
                     self._finished(value)
         except queue.Empty:
@@ -454,6 +532,7 @@ class App:
     def _set_running(self, running):
         self.running = running
         self.start_btn.configure(state="disabled" if running else "normal")
+        self.storyboard_btn.configure(state="disabled" if running else "normal")
         if running:
             self.progress.start(12)
         else:

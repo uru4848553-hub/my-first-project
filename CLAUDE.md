@@ -163,3 +163,5 @@ Resolveを起動し、プロジェクトを開いた状態で実行する。
   - テロップ・効果音の配置の失敗は警告にとどめる。report.md にテロップ・効果音の表
   - アプリ：④ の表に台本の効果音（K01 …）の行が出る。「まとめて追加」は M01・M03_1・K01・S01_ の名前で振り分け、残りは音声→効果音、動画・画像→シーンの順。コピー時、元の名前がすでに「S01_」「K01_」で始まっていれば頭に付け足さない
   - 実機で確かめること：ProRes 4444 の透明が効くか（アルファモード）、テロップが V2 に endFrame どおりの長さで置けるか、効果音を A3 以降に置けるか、Meiryo Bold での見た目
+- **絵コンテ画像 → 台本（ユーザーの要望で追加）**：`core/storyboard.py`。アプリ ② の「絵コンテ画像から作る…」で PNG/JPG/WEBP（複数可、名前順）を選ぶと、Claude API（claude-opus-5、adaptive thinking、構造化出力で {script, corrections}、server-side fallbacks "default"）で台本テキストに変換し、② に入れて「直した・推測した箇所」を表示。画像は長辺2400px・4.5MB以内に縮小して送る。API キーは環境変数 ANTHROPIC_API_KEY かアプリで入力（app_settings.json に保存、git 管理外）。requirements.txt に anthropic を追加。単体テストは偽のクライアントのみ（実 API は未確認）
+- **図入りの取扱説明書**：`取扱説明書.pptx`（16枚）。`tools/manual/make_manual.js`（pptxgenjs）と `tools/manual/shots/`（xvfb で撮ったアプリ画面など）から作る
