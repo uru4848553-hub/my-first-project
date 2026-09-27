@@ -170,13 +170,16 @@ class App:
         step3.columnconfigure(1, weight=1)
         ttk.Label(step3, text="ナレーション").grid(row=0, column=0, sticky="w")
         ttk.Entry(step3, textvariable=self.narration, state="readonly").grid(row=0, column=1, sticky="ew", padx=6)
-        ttk.Button(step3, text="選ぶ…", command=lambda: self.choose_audio(self.narration)).grid(row=0, column=2)
+        nbtns = ttk.Frame(step3)
+        nbtns.grid(row=0, column=2)
+        ttk.Button(nbtns, text="選ぶ…", command=lambda: self.choose_audio(self.narration)).pack(side="left")
+        ttk.Button(nbtns, text="外す", command=lambda: self.clear_audio(self.narration)).pack(side="left", padx=(4, 0))
         ttk.Label(step3, text="BGM（なくてもよい）").grid(row=1, column=0, sticky="w", pady=(6, 0))
         ttk.Entry(step3, textvariable=self.bgm, state="readonly").grid(row=1, column=1, sticky="ew", padx=6, pady=(6, 0))
         btns = ttk.Frame(step3)
         btns.grid(row=1, column=2, pady=(6, 0))
         ttk.Button(btns, text="選ぶ…", command=lambda: self.choose_audio(self.bgm)).pack(side="left")
-        ttk.Button(btns, text="外す", command=lambda: self.bgm.set("")).pack(side="left", padx=(4, 0))
+        ttk.Button(btns, text="外す", command=lambda: self.clear_audio(self.bgm)).pack(side="left", padx=(4, 0))
 
         # 4. 素材
         step4 = ttk.LabelFrame(outer, text=" ④ シーンごとの素材（動画・画像）と効果音 ", padding=8)
@@ -401,6 +404,10 @@ class App:
         if path:
             var.set(os.path.normpath(path))
             self._update_status()
+
+    def clear_audio(self, var):
+        var.set("")
+        self._update_status()
 
     def add_many(self):
         if not self.sections:
