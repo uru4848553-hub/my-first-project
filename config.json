@@ -5,6 +5,8 @@
   "sizing": "fit",
   "whisper_model": "large-v3",
   "low_confidence": 0.5,
+  "telop_mode": "text",
+  "telop_template": "テロップ",
   "telop_font": "",
   "telop_size": 80,
   "telop_y": 0.25,

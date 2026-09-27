@@ -24,9 +24,43 @@ class FakeItem:
     def GetClipProperty(self, key):
         return {"File Path": self.path, "FPS": f"{self.fps:g}", "Frames": str(self.frames)}.get(key)
 
+    def GetName(self):
+        return os.path.basename(self.path)
+
     def SetClipProperty(self, key, value):
         self.alpha = value if key == "Alpha mode" else None
         return key == "Alpha mode"
+
+
+class FakeTool:
+    def __init__(self):
+        self.inputs = {"StyledText": "Custom Text"}
+
+    def SetInput(self, key, value):
+        self.inputs[key] = value
+        return True
+
+    def GetInput(self, key):
+        return self.inputs.get(key)
+
+
+class FakeComp:
+    def __init__(self):
+        self.tool = FakeTool()
+
+    def GetToolList(self, selected=False, kind=None):
+        return {1: self.tool} if kind == "TextPlus" else {}
+
+
+class FakeTemplate(FakeItem):
+    """メディアプールに置いた Text+ のひな形（max_frames より長くは置けない、という想定もまねられる）"""
+
+    def __init__(self, name="テロップ", max_frames=None):
+        super().__init__(name, 30.0, 150)
+        self.name, self.max_frames = name, max_frames
+
+    def GetName(self):
+        return self.name
 
 
 class FakeFolder:
@@ -52,6 +86,12 @@ class FakeTimelineItem:
 
     def GetDuration(self):
         return self.duration
+
+    def GetFusionCompByIndex(self, index):
+        if isinstance(self.item, FakeTemplate):
+            self.comp = getattr(self, "comp", None) or FakeComp()
+            return self.comp
+        return None
 
 
 class FakeTimeline:
@@ -155,6 +195,8 @@ class FakeMediaPool:
             else:
                 src = info["endFrame"] - info["startFrame"] + (1 if self.end_inclusive else 0)
                 duration = round(src * float(tl.settings["timelineFrameRate"]) / item.fps)
+                if isinstance(item, FakeTemplate) and item.max_frames:
+                    duration = min(duration, item.max_frames)
             ti = FakeTimelineItem(item, info["recordFrame"], duration, info["trackIndex"], info.get("mediaType"))
             tl.items.append(ti)
             placed.append(ti)
@@ -450,6 +492,58 @@ class PlaceTest(unittest.TestCase):
         name, warnings = self.run_place(project)
         self.assertTrue(name)
         self.assertEqual(sum("テロップ" in w for w in warnings), 3)
+
+    def add_text_telops(self, template=None):
+        self.plan["telop_mode"] = "text"
+        self.plan["telop_template"] = "テロップ"
+        self.plan["telops"] = [
+            {"label": "S01", "lines": ["ついに", "iPhoneが来る。"], "record_frame": 0, "frames": 40, "lane": 0},
+            {"label": "S03", "lines": ["画面"], "record_frame": 70, "frames": 80, "lane": 0},
+            {"label": "S03[b]", "lines": ["結果"], "record_frame": 120, "frames": 30, "lane": 1},
+        ]
+        project = FakeProject()
+        if template:
+            sub = FakeFolder("ひな形")
+            sub.clips.append(template)
+            project.pool.root.subs.append(sub)
+        return project
+
+    def text_telops(self, project):
+        return [(t.track, t.start - START, t.duration, t.comp.tool.inputs["StyledText"])
+                for t in project.current.items if isinstance(t.item, FakeTemplate)]
+
+    def test_text_telops(self):
+        project = self.add_text_telops(FakeTemplate())
+        _, warnings = self.run_place(project)
+        self.assertEqual(warnings, [])
+        self.assertEqual(self.text_telops(project), [
+            (2, 0, 40, "ついに\niPhoneが来る。"), (2, 70, 80, "画面"), (3, 120, 30, "結果")])
+        # テロップの動画は作らない・取り込まない
+        self.assertEqual(project.pool.imports, [[p] for p in self.paths])
+
+    def test_text_telop_split_when_template_is_short(self):
+        project = self.add_text_telops(FakeTemplate(max_frames=50))
+        _, warnings = self.run_place(project)
+        s03 = [x for x in self.text_telops(project) if x[3] == "画面"]
+        self.assertEqual([(x[1], x[2]) for x in s03], [(70, 50), (120, 30)])
+        self.assertTrue(any("2つのクリップに分けて" in w for w in warnings), warnings)
+
+    def test_text_telop_without_template_is_a_warning(self):
+        project = self.add_text_telops()
+        name, warnings = self.run_place(project)
+        self.assertTrue(name)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("ひな形「テロップ」がメディアプールにない", warnings[0])
+        self.assertEqual(check_plan(self.plan), [])     # テキストのテロップはファイル不要
+
+    def test_run_bin_inside_title_bin(self):
+        self.plan["run"] = "20260927_103005"
+        project = FakeProject()
+        self.run_place(project)
+        title_bin = project.pool.root.subs[0]
+        self.assertEqual(title_bin.GetName(), "動画_テスト")
+        self.assertEqual([f.GetName() for f in title_bin.subs], ["20260927_103005"])
+        self.assertEqual(len(title_bin.subs[0].clips), len(self.paths))
 
     def test_check_plan_telop_missing(self):
         self.add_telops_and_sfx()

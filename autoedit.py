@@ -52,8 +52,29 @@ def check_only(folder):
     return 0
 
 
-def build(folder, config, fake_align=False):
+OUTPUT_FILES = ("plan.json", "report.md", "alignment.json")
+
+
+def archive_output(folder):
+    """前回の output/ の結果（plan.json・report.md など）を output/過去/<日付_時刻>/ に移す（上書きで消さないため）"""
+    out = os.path.join(folder, "output")
+    old = [os.path.join(out, n) for n in OUTPUT_FILES if os.path.isfile(os.path.join(out, n))]
+    if not old:
+        return None
+    stamp = time.strftime("%Y%m%d_%H%M%S", time.localtime(max(os.path.getmtime(p) for p in old)))
+    dst, n = os.path.join(out, "過去", stamp), 2
+    while os.path.exists(dst):
+        dst, n = os.path.join(out, "過去", f"{stamp}_{n}"), n + 1
+    os.makedirs(dst)
+    for p in old:
+        os.replace(p, os.path.join(dst, os.path.basename(p)))
+    return dst
+
+
+def build(folder, config, fake_align=False, title=None):
     """フェーズ1〜3。成功すれば plan を、失敗すれば None を返す"""
+    if os.path.isdir(folder):
+        archive_output(folder)
     # フェーズ1：台本解析・素材照合・エラーチェック
     check = check_project(folder)
     if check.errors:
@@ -121,14 +142,22 @@ def build(folder, config, fake_align=False):
                                                    bgm_duration=bgm_duration, sfx_durations=sfx_durations)
     check.errors.extend(plan_errors)
     check.warnings.extend(plan_warnings)
+    if title:
+        # アプリは実行ごとに「動画名/日付_時刻」のフォルダを作るので、ビン・タイムラインの名前は動画名にし、
+        # メディアプールでは動画名のビンの中に実行ごとのビンを作る
+        plan["name"] = title
+        plan["run"] = os.path.basename(os.path.normpath(folder))
 
     # フェーズ3：尺調整（動画が足りない分は最終フレームの静止画で埋める）
     if not plan_errors:
         fit_errors, fit_warnings = apply_fit(plan)
         check.errors.extend(fit_errors)
         check.warnings.extend(fit_warnings)
-        # テロップの画像と動画
-        check.errors.extend(apply_telops(plan, config))
+        # テロップ："text" は Resolve のひな形（Text+）で置くので、ここでは何も作らない。"video" は透明付きの動画を作る
+        plan["telop_mode"] = config["telop_mode"]
+        plan["telop_template"] = config["telop_template"]
+        if config["telop_mode"] == "video":
+            check.errors.extend(apply_telops(plan, config))
 
     plan_path = write_plan(plan, check.folder)
     report_path = write_report(check, report_rows(plan), report_extra(plan))
@@ -202,6 +231,7 @@ def main(argv=None):
     mode.add_argument("--no-resolve", action="store_true", help="plan.json まで作り、Resolve には置かない")
     mode.add_argument("--from-plan", action="store_true", help="前回の output/plan.json を使って Resolve に置くだけ")
     parser.add_argument("--launch-resolve", action="store_true", help="Resolve が起動していなければ起動する")
+    parser.add_argument("--title", help="ビン・タイムラインの名前（省略時はフォルダ名）")
     parser.add_argument("--project", help="Resolve のこのプロジェクトに置く（なければ作る）。省略時は今開いているプロジェクト")
     args = parser.parse_args(argv)
 
@@ -217,7 +247,7 @@ def main(argv=None):
         print(f"[エラー] {e}")
         return 1
 
-    plan = build(args.folder, config, fake_align=args.fake_align)
+    plan = build(args.folder, config, fake_align=args.fake_align, title=args.title)
     if plan is None:
         return 1
     if args.no_resolve:

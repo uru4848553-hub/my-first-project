@@ -1,5 +1,7 @@
 """アプリで選んだ台本・ナレーション・BGM・素材・効果音から、動画フォルダ（script.md / audio / bgm / media / se）を作る。
 
+実行するたびに「保存先/動画名/日付_時刻」の新しいフォルダを作る（前回までのものは消さない・上書きしない）。
+
 素材は、台本のセクション（S01, S03a …）ごとに選ばれたファイルを media/ に
 「<セクション>_<元のファイル名>」でコピーするので、元のファイル名は自由でよい。
 効果音（K01 …）も同じく se/ に「K01_<元のファイル名>」でコピーする。
@@ -7,6 +9,7 @@
 import os
 import re
 import shutil
+from datetime import datetime
 
 from core.media import AUDIO_EXTS, IMAGE_EXTS, VIDEO_EXTS
 
@@ -73,28 +76,26 @@ def auto_assign(keys, paths, assigned=None):
     return result, left
 
 
-def _replace_files(folder, copies):
-    """folder 直下のファイルを copies（(コピー元, コピー先のファイル名) の列）に入れ替える（サブフォルダは残す）。
-
-    選ばれたファイルがこのフォルダの中にあっても消さないよう、先に一時フォルダへコピーしてから入れ替える。
-    """
+def _copy_files(folder, copies):
+    """copies（(コピー元, コピー先のファイル名) の列）を folder にコピーする。同じ名前があれば _2 などを付け、上書きしない"""
     os.makedirs(folder, exist_ok=True)
-    staging = os.path.join(folder, "_staging")
-    shutil.rmtree(staging, ignore_errors=True)
-    os.makedirs(staging)
-    try:
-        staged = []
-        for src, name in copies:
-            dst = os.path.join(staging, name)
-            shutil.copy2(src, dst)
-            staged.append(dst)
-        for entry in os.scandir(folder):
-            if entry.is_file():
-                os.remove(entry.path)
-        for path in staged:
-            os.replace(path, os.path.join(folder, os.path.basename(path)))
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
+    for src, name in copies:
+        stem, ext = os.path.splitext(name)
+        dst, n = os.path.join(folder, name), 2
+        while os.path.exists(dst):
+            dst, n = os.path.join(folder, f"{stem}_{n}{ext}"), n + 1
+        shutil.copy2(src, dst)
+
+
+def run_folder(base_dir, name, now=None):
+    """今回の実行用の新しいフォルダ（保存先/動画名/日付_時刻）。前回までのフォルダには触らない"""
+    parent = os.path.join(base_dir, safe_name(name))
+    stamp = f"{(now or datetime.now()):%Y%m%d_%H%M%S}"
+    folder, n = os.path.join(parent, stamp), 2
+    while os.path.exists(folder):
+        folder, n = os.path.join(parent, f"{stamp}_{n}"), n + 1
+    os.makedirs(folder)
+    return folder
 
 
 def copy_name(key, path):
@@ -103,27 +104,28 @@ def copy_name(key, path):
     return name if name.upper().startswith(key.upper() + "_") else f"{key}_{name}"
 
 
-def assemble(base_dir, name, script_text, narration, materials, bgm=None, log=print):
-    """動画フォルダを作り（あれば中身を入れ替え）、そのパスを返す。
+def assemble(base_dir, name, script_text, narration, materials, bgm=None, log=print, now=None):
+    """今回の実行用に新しい動画フォルダ（保存先/動画名/日付_時刻）を作ってコピーし、そのパスを返す。
 
+    前回までのフォルダ・ファイルは消さず、上書きもしない（前に作ったタイムラインの素材が消えないように）。
     materials: {セクションのキー（"S01", "S03a" …）または効果音 ID（"K01" …）: ファイルのパス}
     """
-    folder = os.path.join(base_dir, safe_name(name))
-    os.makedirs(folder, exist_ok=True)
+    folder = run_folder(base_dir, name, now)
     with open(os.path.join(folder, "script.md"), "w", encoding="utf-8") as fp:
         fp.write(script_text if script_text.endswith("\n") else script_text + "\n")
 
     log("ナレーションをコピー中...")
-    _replace_files(os.path.join(folder, "audio"), [(narration, os.path.basename(narration))])
-    _replace_files(os.path.join(folder, "bgm"), [(bgm, os.path.basename(bgm))] if bgm else [])
+    _copy_files(os.path.join(folder, "audio"), [(narration, os.path.basename(narration))])
+    if bgm:
+        _copy_files(os.path.join(folder, "bgm"), [(bgm, os.path.basename(bgm))])
 
     media = {k: p for k, p in materials.items() if not is_sfx_key(k)}
     sfx = {k: p for k, p in materials.items() if is_sfx_key(k)}
     log(f"素材をコピー中（{len(media)}件）...")
-    _replace_files(os.path.join(folder, "media"), [(p, copy_name(k, p)) for k, p in sorted(media.items())])
+    _copy_files(os.path.join(folder, "media"), [(p, copy_name(k, p)) for k, p in sorted(media.items())])
     if sfx:
         log(f"効果音をコピー中（{len(sfx)}件）...")
-    _replace_files(os.path.join(folder, "se"), [(p, copy_name(k, p)) for k, p in sorted(sfx.items())])
+        _copy_files(os.path.join(folder, "se"), [(p, copy_name(k, p)) for k, p in sorted(sfx.items())])
     return folder
 
 

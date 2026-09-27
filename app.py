@@ -138,7 +138,7 @@ class App:
         ttk.Label(step1, text="保存先フォルダ").grid(row=1, column=0, sticky="w", pady=(6, 0))
         ttk.Entry(step1, textvariable=self.base_dir).grid(row=1, column=1, sticky="ew", padx=6, pady=(6, 0))
         ttk.Button(step1, text="選ぶ…", command=self.choose_base).grid(row=1, column=2, pady=(6, 0))
-        ttk.Label(step1, text="保存先フォルダの中に「動画の名前」のフォルダを作り、素材をコピーします",
+        ttk.Label(step1, text="保存先フォルダの中に「動画の名前\\日付_時刻」のフォルダを毎回新しく作り、素材をコピーします（前のものは消しません）",
                   foreground="#666").grid(row=2, column=1, columnspan=2, sticky="w", padx=6)
 
         # 2. 台本
@@ -474,6 +474,7 @@ class App:
             self._post("log", f"動画フォルダ: {folder}")
             self._post("status", "処理中（読み上げとシーンの対応をとっています。数分かかります）...")
             cmd = [child_python(), "-u", os.path.join(ROOT, "autoedit.py"), folder]
+            cmd += ["--title", job["name"].strip()]
             if job["project"]:
                 cmd += ["--project", job["project"]]
             if job["launch"]:

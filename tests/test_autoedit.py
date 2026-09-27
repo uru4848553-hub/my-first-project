@@ -107,6 +107,31 @@ class AutoeditTest(unittest.TestCase):
                          plan["total_frames"])
         self.assertIn("仮のアライメント", out.getvalue())
 
+    def test_title_run_and_text_telops(self):
+        with open(os.path.join(self.dir, "script.md"), "a", encoding="utf-8") as f:
+            f.write("テロップ：結果です\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = autoedit.main([self.dir, "--fake-align", "--no-resolve", "--title", "iPhone未来予測"])
+        self.assertEqual(code, 0, out.getvalue())
+        with open(os.path.join(self.dir, "output", "plan.json"), encoding="utf-8") as f:
+            plan = json.load(f)
+        self.assertEqual((plan["name"], plan["run"]), ("iPhone未来予測", "動画_テスト"))
+        self.assertEqual(plan["telop_mode"], "text")
+        self.assertEqual(plan["telops"][0]["lines"], ["結果です"])
+        self.assertNotIn("path", plan["telops"][0])
+        self.assertFalse(os.path.exists(os.path.join(self.dir, "media", "_telop")))   # テキストなので動画は作らない
+
+    def test_rerun_keeps_previous_output(self):
+        for _ in range(2):
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(autoedit.main([self.dir, "--fake-align", "--no-resolve"]), 0)
+        past = os.path.join(self.dir, "output", "過去")
+        runs = os.listdir(past)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(sorted(os.listdir(os.path.join(past, runs[0]))), ["plan.json", "report.md"])
+        self.assertTrue(os.path.isfile(os.path.join(self.dir, "output", "plan.json")))
+
     def test_from_plan_without_plan(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):

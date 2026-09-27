@@ -13,6 +13,15 @@ from datetime import datetime
 
 # config.json の sizing → Resolve の「解像度が異なるファイル」の設定値
 SIZING = {"fit": "scaleToFit", "fill": "scaleToCrop"}
+DEFAULT_TEMPLATE = "テロップ"
+TEMPLATE_HELP = ("Resolve のメディアプールに、テロップのひな形（Text+）を「{name}」という名前で用意してください："
+                 "エフェクト → タイトル → Fusionタイトル →「Text+」をタイムラインに置き、フォント・大きさ・位置・色を整えてから、"
+                 "そのクリップをメディアプールへドラッグし、名前を「{name}」に変える（プロジェクトごとに1回）")
+
+
+def telop_mode(plan):
+    """"text"（Resolve の Text+ で置く）か "video"（透明付きの動画で置く。以前の方式）"""
+    return plan.get("telop_mode") or ("video" if any(t.get("path") for t in plan.get("telops") or []) else "text")
 MARKER_COLOR = "Blue"
 
 
@@ -53,6 +62,8 @@ class Placer:
         self.media_pool = project.GetMediaPool()
 
         folder = self._bin(self.plan["name"])
+        if self.plan.get("run"):
+            folder = self._bin(self.plan["run"], parent=folder)
         self.media_pool.SetCurrentFolder(folder)
         items = self._import(folder)
 
@@ -63,8 +74,12 @@ class Placer:
         for sec in self.plan["sections"]:
             for clip in sec["clips"]:
                 self._place_clip(sec, clip, items[_norm(clip["path"])])
-        for telop in self.plan.get("telops") or []:
-            self._place_telop(telop, items[_norm(telop["path"])])
+        telops = self.plan.get("telops") or []
+        if telops and telop_mode(self.plan) == "text":
+            self._place_text_telops(telops)
+        else:
+            for telop in telops:
+                self._place_telop(telop, items[_norm(telop["path"])])
         self._place_narration(items[_norm(self.plan["audio"]["path"])])
         if self.plan.get("bgm"):
             self._place_bgm(items[_norm(self.plan["bgm"]["path"])])
@@ -73,8 +88,8 @@ class Placer:
         self._add_markers()
         return self.timeline.GetName(), self.warnings
 
-    def _bin(self, name):
-        root = self.media_pool.GetRootFolder()
+    def _bin(self, name, parent=None):
+        root = parent or self.media_pool.GetRootFolder()
         for sub in root.GetSubFolderList() or []:
             if sub.GetName() == name:
                 return sub
@@ -88,7 +103,8 @@ class Placer:
         paths = [c["path"] for s in self.plan["sections"] for c in s["clips"]] + [self.plan["audio"]["path"]]
         if self.plan.get("bgm"):
             paths.append(self.plan["bgm"]["path"])
-        paths += [t["path"] for t in self.plan.get("telops") or []]
+        if telop_mode(self.plan) == "video":
+            paths += [t["path"] for t in self.plan.get("telops") or []]
         paths += [x["path"] for x in self.plan.get("sfx") or []]
         existing = {}
         for clip in folder.GetClipList() or []:
@@ -240,6 +256,70 @@ class Placer:
             self.warnings.append(f"{label} の位置・長さが想定と違います（予定: {telop['record_frame']}から{frames}フレーム、"
                                  f"実際: {placed.GetStart() - self.start}から{placed.GetDuration()}フレーム）")
 
+    # --- テロップ（Resolve の Text+） ----------------------------------------
+
+    def _find_clip(self, name):
+        """メディアプール全体（すべてのビン）から、名前が name のクリップを探す"""
+        stack = [self.media_pool.GetRootFolder()]
+        while stack:
+            folder = stack.pop(0)
+            for clip in folder.GetClipList() or []:
+                if clip.GetName() == name:
+                    return clip
+            stack.extend(folder.GetSubFolderList() or [])
+        return None
+
+    def _place_text_telops(self, telops):
+        """テロップを、メディアプールのひな形（Text+）から V2（重なるときは V3 …）に置き、文字を入れる。
+        Resolve 上でそのまま文字・見た目を直せる。うまくいかなくても警告にとどめる。"""
+        name = self.plan.get("telop_template") or DEFAULT_TEMPLATE
+        template = self._find_clip(name)
+        if template is None:
+            self.warnings.append(f"テロップのひな形「{name}」がメディアプールにないため、テロップ（{len(telops)}件）を置けませんでした。"
+                                 + TEMPLATE_HELP.format(name=name))
+            return
+        for telop in telops:
+            self._place_text_telop(telop, template)
+
+    def _append_title(self, template, pos, frames, track):
+        """ひな形を pos から frames フレーム置く（置けた部分の TimelineItem の列を返す）。
+        ひな形の長さより長く置けない場合は、続けて置き足して埋める"""
+        src_fps = _float(template.GetClipProperty("FPS")) or self.fps
+        placed_items, done = [], 0
+        while done < frames:
+            want = frames - done
+            src = max(1, round(want * src_fps / self.fps))
+            info = {"mediaPoolItem": template, "startFrame": 0, "trackIndex": track, "recordFrame": self.start + pos + done,
+                    "endFrame": src - 1 if self.end_inclusive else src}
+            item = self._append(dict(info, mediaType=1)) or self._append(info)
+            if item is None or item.GetDuration() <= 0:
+                break
+            if item.GetDuration() > want:     # 長すぎたら置き直さず、警告だけ出す（次のテロップと重なる可能性）
+                self.warnings.append(f"テロップが予定より長く置かれました（予定 {want}、実際 {item.GetDuration()} フレーム）")
+            placed_items.append(item)
+            done += item.GetDuration()
+        return placed_items
+
+    def _place_text_telop(self, telop, template):
+        track = 2 + telop.get("lane", 0)
+        text = "\n".join(telop["lines"])
+        label = f"テロップ {telop['label']}「{' / '.join(telop['lines'])}」"
+        if not self._ensure_tracks("video", track):
+            self.warnings.append(f"{label}: ビデオトラック V{track} を追加できないため置けませんでした")
+            return
+        items = self._append_title(template, telop["record_frame"], telop["frames"], track)
+        if not items:
+            self.warnings.append(f"{label} を V{track} に置けませんでした")
+            return
+        if len(items) > 1:
+            self.warnings.append(f"{label}: ひな形の長さの上限のため、{len(items)}つのクリップに分けて置きました（文字を直すときは全部直してください）")
+        if items[0].GetStart() != self.start + telop["record_frame"]:
+            self.warnings.append(f"{label} の位置が想定と違います（予定: {telop['record_frame']}、実際: {items[0].GetStart() - self.start}フレーム）")
+        for item in items:
+            if not _set_text(item, text):
+                self.warnings.append(f"{label}: 文字を入れられませんでした（ひな形が Text+ か確認してください）。Resolve で文字を入力してください")
+                break
+
     def _place_sfx(self, sfx, item):
         """効果音を BGM の次のオーディオトラック（重なるときはさらに次）に、ファイルの長さのまま置く。"""
         track = self.narration_track + (2 if self.plan.get("bgm") else 1) + sfx.get("lane", 0)
@@ -305,6 +385,21 @@ class Placer:
             self.warnings.append(f"マーカーの位置が想定と違います（想定: {sorted(expected)}、実際: {sorted(actual)}）")
 
 
+def _set_text(item, text):
+    """Text+ のクリップの文字を text にする（ひな形の中の Text+ ツールすべて）。できたら True"""
+    try:
+        comp = item.GetFusionCompByIndex(1)
+        tools = comp.GetToolList(False, "TextPlus") if comp else None
+    except Exception:  # Fusion を持たないクリップなど
+        return False
+    tools = list(tools.values()) if isinstance(tools, dict) else list(tools or [])
+    if not tools:
+        return False
+    for tool in tools:
+        tool.SetInput("StyledText", text)
+    return tools[0].GetInput("StyledText") == text
+
+
 def check_plan(plan):
     """配置してよい plan か確かめ、問題を返す"""
     problems = list(plan.get("errors") or [])
@@ -319,7 +414,7 @@ def check_plan(plan):
         problems.append(f"ナレーションがありません: {plan['audio']['path']}")
     if plan.get("bgm") and not os.path.isfile(plan["bgm"]["path"]):
         problems.append(f"BGM がありません: {plan['bgm']['path']}")
-    for t in plan.get("telops") or []:
+    for t in (plan.get("telops") or []) if telop_mode(plan) == "video" else []:
         if not t.get("path") or not os.path.isfile(t["path"]):
             problems.append(f"テロップ {t['label']} の動画がありません（{t.get('path') or '未作成'}）")
     for x in plan.get("sfx") or []:

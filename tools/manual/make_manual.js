@@ -99,7 +99,7 @@ function timeline(s, x, y, w, rowH = 0.46, labelW = 1.5) {
   s.addText(bullets([
     "読み上げに合わせてシーンを切り替え",
     "動画が短いときは最後の画面で埋める",
-    "テロップを作って V2 に置く",
+    "テロップを Text+ で V2 に置く（直せる）",
     "BGM・効果音を置く",
     "縦長 1080×1920・30fps で作る",
   ], 13), { x: 8.7, y: 2.25, w: 4.1, h: 2.3, fontFace: F, color: C.ink, margin: 0, valign: "top", isTextBox: true });
@@ -288,7 +288,7 @@ function timeline(s, x, y, w, rowH = 0.46, labelW = 1.5) {
   shot(s, "app_filled.png", sx, sy, sw, sh);
   [[22, 1], [160, 2], [340, 3], [462, 4], [672, 5]].forEach(([py, n]) => num(s, sx - 0.42, sy + py * sc - 0.17, n, 0.36));
   const items = [
-    ["動画の名前と保存先", "名前がタイムライン名に。保存先に作業フォルダができる"],
+    ["動画の名前と保存先", "毎回「名前\\日付_時刻」の新しいフォルダができる（前のは消えない）"],
     ["台本", "絵コンテ画像から作る／貼り付ける／ファイルから読み込む"],
     ["ナレーションと BGM", "ナレーションは必須。BGM はなくても OK"],
     ["素材と効果音", "シーンごとに動画・画像を。効果音の行は台本から自動で出る"],
@@ -357,8 +357,8 @@ function timeline(s, x, y, w, rowH = 0.46, labelW = 1.5) {
   title(s, "Resolve で確認・仕上げ", "新しくできたタイムラインを再生してチェック");
   const checks = [
     ["切り替え位置", "映像がナレーションと合っているか"],
-    ["テロップの文字", "誤字がないか。直すときは台本を直して再スタート"],
-    ["テロップの周り", "黒くなっていたら：クリップを右クリック → クリップ属性 → アルファモード「ストレート」"],
+    ["テロップの文字", "誤字があれば、テロップをクリック → インスペクタの「テキスト」で直接直す"],
+    ["前のタイムライン", "やり直しても前のタイムライン・素材は消えない。見比べて良い方を使う"],
     ["音量", "BGM・効果音は自動で下げないので、Resolve で調整"],
     ["レポート", "アプリの「レポートを開く」で警告を確認"],
   ];
@@ -370,27 +370,32 @@ function timeline(s, x, y, w, rowH = 0.46, labelW = 1.5) {
     text(s, d, 3.4, y - 0.17, 5.4, 0.8, { fontSize: 12.5, color: C.muted, valign: "middle" });
   });
   s.addImage({ path: IMG("telop_example.png"), x: 9.6, y: 1.7, w: 3.0, h: 5.33, shadow: { type: "outer", color: "000000", opacity: 0.3, blur: 8, offset: 3, angle: 90 } });
-  text(s, "テロップの見本（白文字・黒縁・上から4分の1）", 9.2, 7.07, 3.8, 0.3, { fontSize: 10.5, color: C.muted, align: "center" });
+  text(s, "テロップの見本（見た目はひな形しだい）", 9.2, 7.07, 3.8, 0.3, { fontSize: 10.5, color: C.muted, align: "center" });
 }
 
-// ---------- 14. 見た目の調整 ----------
+// ---------- 14. テロップのひな形 ----------
 {
   const s = pres.addSlide(); s.background = { color: C.white };
-  title(s, "テロップの見た目を変える", "フォルダの config.json をメモ帳で開いて数字を変え、保存します");
-  const hdr = { bold: true, color: C.white, fill: { color: C.dark }, fontFace: F, fontSize: 13 };
-  const cell = (t, o = {}) => ({ text: t, options: Object.assign({ fontFace: F, fontSize: 12.5, color: C.ink }, o) });
-  s.addTable([
-    [{ text: "項目", options: hdr }, { text: "意味", options: hdr }, { text: "最初の値", options: hdr }],
-    [cell("telop_size", { fontFace: MONO, bold: true }), cell("文字の大きさ"), cell("80")],
-    [cell("telop_y", { fontFace: MONO, bold: true }), cell("縦の位置（上 0 〜 下 1）"), cell("0.25")],
-    [cell("telop_color", { fontFace: MONO, bold: true }), cell("文字の色"), cell("#FFFFFF（白）")],
-    [cell("telop_stroke_color", { fontFace: MONO, bold: true }), cell("縁取りの色"), cell("#000000（黒）")],
-    [cell("telop_stroke_width", { fontFace: MONO, bold: true }), cell("縁取りの太さ"), cell("8")],
-    [cell("telop_font", { fontFace: MONO, bold: true }), cell("フォントファイル（空ならメイリオ）"), cell("\"\"")],
-  ], { x: 0.6, y: 1.8, w: 7.4, colW: [2.6, 3.0, 1.8], rowH: 0.52, border: { type: "solid", color: C.line, pt: 1 } });
-  code(s, '{\n  "fps": 30,\n  "width": 1080,\n  "height": 1920,\n  "telop_size": 70,\n  "telop_y": 0.7,\n  ...\n}', 8.4, 1.8, 4.35, 3.1, 13);
-  text(s, "↑ 例：少し小さく、画面の下のほうに", 8.4, 5.0, 4.35, 0.4, { fontSize: 12, color: C.muted });
-  note(s, "数字を変えて再スタートすると、新しい見た目のテロップが作られます。わからなければ「もう少し小さく」などと Claude に頼んでも OK", 0.6, 5.75, 12.15, 0.95);
+  title(s, "テロップのひな形を作る（最初に1回）", "テロップは Resolve の Text+ で置かれ、見た目はこの「ひな形」のとおりになります");
+  const steps = [
+    ["Text+ を置く", "エディットページで\nエフェクト → タイトル →\nFusionタイトル →「Text+」を\nタイムラインへ"],
+    ["見た目を整える", "インスペクタで\nフォント・大きさ・色・\n縁取り・位置を決める\n（文字の中身は何でも OK）"],
+    ["メディアプールへ", "そのクリップを\nメディアプールへドラッグし、\n名前を「テロップ」に変える"],
+  ];
+  const w = 3.75, gap = 0.45, y = 1.9;
+  steps.forEach(([h, d], i) => {
+    const x = 0.6 + i * (w + gap);
+    card(s, x, y, w, 3.3, i === 2 ? C.orangeSoft : C.light);
+    num(s, x + 0.3, y + 0.3, i + 1, 0.6);
+    text(s, h, x + 1.05, y + 0.3, w - 1.2, 0.6, { fontSize: 18, bold: true, valign: "middle" });
+    text(s, d, x + 0.3, y + 1.15, w - 0.5, 2.0, { fontSize: 13.5, color: C.ink });
+    if (i < steps.length - 1) text(s, "▶", x + w + 0.05, y + 1.4, gap - 0.1, 0.5, { fontSize: 18, color: C.orange, align: "center" });
+  });
+  // メディアプールのひな形のイメージ
+  s.addShape(pres.shapes.ROUNDED_RECTANGLE, { x: 9.05, y: 4.35, w: 1.5, h: 0.62, rectRadius: 0.06, fill: { color: "7C3AED" }, line: { color: "7C3AED" } });
+  text(s, "T+  テロップ", 9.05, 4.35, 1.5, 0.62, { fontSize: 13, bold: true, color: C.white, align: "center", valign: "middle" });
+  note(s, "プロジェクトごとに1回だけ。ひな形がないとテロップは置かれず、レポートに警告が出ます（ほかは普通に並びます）。見た目を変えたいときは、ひな形を直して再スタート", 0.6, 5.55, 12.15, 0.95);
+  text(s, "置かれたテロップは、クリックしてインスペクタの「テキスト」で文字を直せます", 0.6, 6.7, 12.15, 0.4, { fontSize: 12.5, color: C.muted });
 }
 
 // ---------- 15. 困ったとき ----------
@@ -407,7 +412,7 @@ function timeline(s, x, y, w, rowH = 0.46, labelW = 1.5) {
     [cell("API キーが正しくありません"), cell("キーを貼り直す（p.5）。残高がないときも失敗します")],
     [cell("アライメント信頼度が低い（警告）"), cell("台本と音声の文章が違う。どちらかを直す")],
     [cell("Resolve に接続できません"), cell("Resolve の 環境設定 → システム → 一般 →「外部スクリプトに使用」を「ローカル」に")],
-    [cell("テロップを作るには Pillow が必要です"), cell("p.4 の準備（pip install）をもう一度")],
+    [cell("テロップのひな形「テロップ」がメディアプールにない"), cell("p.14 のひな形を作ってから、もう一度スタート")],
   ], { x: 0.6, y: 1.8, w: 12.15, colW: [5.0, 7.15], rowH: 0.56, border: { type: "solid", color: C.line, pt: 1 } });
   note(s, "わからないときは、アプリ画面（黒い欄が見えるように）を撮って Claude に送ってください", 0.6, 6.45, 12.15, 0.6);
 }

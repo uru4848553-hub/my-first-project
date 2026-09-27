@@ -12,7 +12,11 @@ DEFAULTS = {
     "whisper_model": "large-v3",
     # セクション内の単語の平均確率がこれ未満なら「信頼度が低い」と警告する
     "low_confidence": 0.5,
-    # テロップ（台本の「テロップ：〜」）の見た目
+    # テロップ（台本の「テロップ：〜」）
+    # "text"：Resolve のメディアプールのひな形（Text+）を置いて文字を入れる（Resolve で直せる）
+    # "video"：文字を描いた透明付きの動画を置く（以前の方式。下の telop_font 〜 telop_max_width はこのときの見た目）
+    "telop_mode": "text",
+    "telop_template": "テロップ",  # "text" のときに使う、メディアプールのひな形の名前
     "telop_font": "",              # 空ならメイリオ Bold など見つかったもの
     "telop_size": 80,              # 文字の大きさ（ピクセル）
     "telop_y": 0.25,               # 文字の縦位置（画面の上端 0 〜 下端 1。テロップのまとまりの中心）
@@ -46,6 +50,10 @@ def load_config(path=None):
     for key in ("telop_y", "telop_max_width"):
         if not isinstance(config[key], (int, float)) or not 0 < config[key] <= 1:
             raise ConfigError(f"config.json の {key} は 0 より大きく 1 以下の数にしてください（現在: {config[key]!r}）")
+    if config["telop_mode"] not in ("text", "video"):
+        raise ConfigError(f"config.json の telop_mode は \"text\" か \"video\" にしてください（現在: {config['telop_mode']!r}）")
+    if not isinstance(config["telop_template"], str) or not config["telop_template"].strip():
+        raise ConfigError("config.json の telop_template にひな形の名前を書いてください")
     if config["sizing"] not in ("fit", "fill"):
         raise ConfigError(f"config.json の sizing は \"fit\" か \"fill\" にしてください（現在: {config['sizing']!r}）")
     return config

@@ -2,6 +2,7 @@ import os
 import shutil
 import tempfile
 import unittest
+from datetime import datetime
 
 from core.assemble import assemble, auto_assign, safe_name, validate
 from core.checks import check_project
@@ -92,8 +93,9 @@ class AssembleTest(unittest.TestCase):
         bgm = self.f("bgm.wav")
         materials = {"S01": self.f("opening.mp4"), "S02": self.f("graph.png"),
                      "S03a": self.f("screen.mov"), "S03b": self.f("opening.mp4")}
-        folder = assemble(self.dir, "動画:テスト", SCRIPT, narration, materials, bgm, log=lambda m: None)
-        self.assertEqual(folder, os.path.join(self.dir, "動画_テスト"))
+        folder = assemble(self.dir, "動画:テスト", SCRIPT, narration, materials, bgm, log=lambda m: None,
+                          now=datetime(2026, 9, 27, 10, 30, 5))
+        self.assertEqual(folder, os.path.join(self.dir, "動画_テスト", "20260927_103005"))
         self.assertEqual(sorted(os.listdir(os.path.join(folder, "media"))),
                          ["S01_opening.mp4", "S02_graph.png", "S03a_screen.mov", "S03b_opening.mp4"])
         self.assertEqual(os.listdir(os.path.join(folder, "audio")), ["ElevenLabs_2026 - Voice, v3.mp3"])
@@ -104,21 +106,28 @@ class AssembleTest(unittest.TestCase):
         self.assertEqual([e.section.key for e in check.entries], ["S01", "S02", "S03a", "S03b"])
         self.assertEqual(os.path.basename(check.bgm), "bgm.wav")
 
-    def test_assemble_again_replaces_files_but_keeps_cache_folders(self):
+    def test_assemble_again_keeps_previous_runs(self):
         narration = self.f("n.mp3")
         materials = {k: self.f(f"{k}.mp4") for k in ("S01", "S02", "S03a", "S03b")}
-        folder = assemble(self.dir, "動画", SCRIPT, narration, materials, self.f("bgm.mp3"), log=lambda m: None)
-        os.makedirs(os.path.join(folder, "media", "_stills"))
-        # 2回目：台本を変え、S02 の素材を差し替え、BGM を外す。S01 はフォルダ内のコピーそのものを選ぶ
+        now = datetime(2026, 9, 27, 10, 30, 5)
+        first = assemble(self.dir, "動画", SCRIPT, narration, materials, self.f("bgm.mp3"), log=lambda m: None, now=now)
+        os.makedirs(os.path.join(first, "media", "_stills"))
+        before = sorted(os.listdir(os.path.join(first, "media")))
+        # 2回目（同じ時刻でも別のフォルダ）：台本を変え、S02 を差し替え、BGM を外す。S01 は1回目のフォルダ内のファイルを選ぶ
         script2 = "## S01\n一。\n## S02\n二。\n"
-        inside = os.path.join(folder, "media", "S01_S01.mp4")
-        folder = assemble(self.dir, "動画", script2, narration, {"S01": inside, "S02": self.f("new.png", b"new")},
-                          None, log=lambda m: None)
-        self.assertEqual(sorted(os.listdir(os.path.join(folder, "media"))),
-                         ["S01_S01.mp4", "S02_new.png", "_stills"])
-        self.assertEqual(os.listdir(os.path.join(folder, "bgm")), [])
-        self.assertEqual(check_project(folder).errors, [])
-
+        inside = os.path.join(first, "media", "S01_S01.mp4")
+        second = assemble(self.dir, "動画", script2, narration, {"S01": inside, "S02": self.f("new.png", b"new")},
+                          None, log=lambda m: None, now=now)
+        self.assertEqual(second, first + "_2")
+        self.assertEqual(sorted(os.listdir(os.path.join(second, "media"))), ["S01_S01.mp4", "S02_new.png"])
+        self.assertFalse(os.path.exists(os.path.join(second, "bgm")))
+        self.assertEqual(check_project(second).errors, [])
+        # 1回目のフォルダはそのまま（消えない・上書きされない）
+        self.assertEqual(sorted(os.listdir(os.path.join(first, "media"))), before)
+        self.assertEqual(os.listdir(os.path.join(first, "bgm")), ["bgm.mp3"])
+        with open(os.path.join(first, "script.md"), encoding="utf-8") as fp:
+            self.assertEqual(fp.read(), SCRIPT)
+        self.assertEqual(check_project(first).errors, [])
 
 if __name__ == "__main__":
     unittest.main()
