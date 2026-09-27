@@ -14,6 +14,7 @@ from datetime import datetime
 # config.json の sizing → Resolve の「解像度が異なるファイル」の設定値
 SIZING = {"fit": "scaleToFit", "fill": "scaleToCrop"}
 DEFAULT_TEMPLATE = "テロップ"
+TEMPLATE_ALIASES = ("テロップ", "telop")   # この名前のひな形も使う（大文字・小文字、前後の空白は区別しない）
 TEMPLATE_HELP = ("Resolve のメディアプールに、テロップのひな形（Text+）を「{name}」という名前で用意してください："
                  "エフェクト → タイトル → Fusionタイトル →「Text+」をタイムラインに置き、フォント・大きさ・位置・色を整えてから、"
                  "そのクリップをメディアプールへドラッグし、名前を「{name}」に変える（プロジェクトごとに1回）")
@@ -258,13 +259,14 @@ class Placer:
 
     # --- テロップ（Resolve の Text+） ----------------------------------------
 
-    def _find_clip(self, name):
-        """メディアプール全体（すべてのビン）から、名前が name のクリップを探す"""
+    def _find_clip(self, names):
+        """メディアプール全体（すべてのビン）から、名前が names のどれかのクリップを探す（大文字・小文字は区別しない）"""
+        wanted = {n.strip().casefold() for n in names}
         stack = [self.media_pool.GetRootFolder()]
         while stack:
             folder = stack.pop(0)
             for clip in folder.GetClipList() or []:
-                if clip.GetName() == name:
+                if (clip.GetName() or "").strip().casefold() in wanted:
                     return clip
             stack.extend(folder.GetSubFolderList() or [])
         return None
@@ -273,9 +275,9 @@ class Placer:
         """テロップを、メディアプールのひな形（Text+）から V2（重なるときは V3 …）に置き、文字を入れる。
         Resolve 上でそのまま文字・見た目を直せる。うまくいかなくても警告にとどめる。"""
         name = self.plan.get("telop_template") or DEFAULT_TEMPLATE
-        template = self._find_clip(name)
+        template = self._find_clip((name,) + TEMPLATE_ALIASES)
         if template is None:
-            self.warnings.append(f"テロップのひな形「{name}」がメディアプールにないため、テロップ（{len(telops)}件）を置けませんでした。"
+            self.warnings.append(f"テロップのひな形（名前が「{name}」か「telop」のもの）がメディアプールにないため、テロップ（{len(telops)}件）を置けませんでした。"
                                  + TEMPLATE_HELP.format(name=name))
             return
         for telop in telops:

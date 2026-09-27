@@ -521,6 +521,12 @@ class PlaceTest(unittest.TestCase):
         # テロップの動画は作らない・取り込まない
         self.assertEqual(project.pool.imports, [[p] for p in self.paths])
 
+    def test_text_telop_template_named_telop(self):
+        project = self.add_text_telops(FakeTemplate(name=" Telop"))
+        _, warnings = self.run_place(project)
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(self.text_telops(project)), 3)
+
     def test_text_telop_split_when_template_is_short(self):
         project = self.add_text_telops(FakeTemplate(max_frames=50))
         _, warnings = self.run_place(project)
@@ -533,7 +539,7 @@ class PlaceTest(unittest.TestCase):
         name, warnings = self.run_place(project)
         self.assertTrue(name)
         self.assertEqual(len(warnings), 1)
-        self.assertIn("ひな形「テロップ」がメディアプールにない", warnings[0])
+        self.assertIn("ひな形（名前が「テロップ」か「telop」のもの）がメディアプールにない", warnings[0])
         self.assertEqual(check_plan(self.plan), [])     # テキストのテロップはファイル不要
 
     def test_run_bin_inside_title_bin(self):
