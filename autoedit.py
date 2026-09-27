@@ -156,6 +156,7 @@ def build(folder, config, fake_align=False, title=None):
         # テロップ："text" は Resolve のひな形（Text+）で置くので、ここでは何も作らない。"video" は透明付きの動画を作る
         plan["telop_mode"] = config["telop_mode"]
         plan["telop_template"] = config["telop_template"]
+        plan["telop_line_chars"] = config["telop_line_chars"]
         if config["telop_mode"] == "video":
             check.errors.extend(apply_telops(plan, config))
 

@@ -6,7 +6,7 @@ import unittest
 
 from core.config import DEFAULTS
 from core.ffmpeg import probe_video
-from core.telop import TelopError, apply_telops, find_font, wrap
+from core.telop import TelopError, apply_telops, find_font, wrap, wrap_lines, wrap_units
 
 try:
     import PIL  # noqa: F401
@@ -26,6 +26,21 @@ class WrapTest(unittest.TestCase):
 
     def test_punctuation_stays_on_previous_line(self):
         self.assertEqual(wrap("あいうえ。お", FakeFont(), 40), ["あいうえ。", "お"])
+
+
+class WrapUnitsTest(unittest.TestCase):
+    def test_fits(self):
+        self.assertEqual(wrap_units("月8,000ドル超と報告", 10), ["月8,000ドル超と報告"])   # 半角は0.55文字分
+
+    def test_breaks_after_punctuation(self):
+        self.assertEqual(wrap_units("AIを使った副業で、月8,000ドル超と報告されています。", 10),
+                         ["AIを使った副業で、", "月8,000ドル超と報告", "されています。"])
+
+    def test_no_punctuation_at_line_start(self):
+        self.assertEqual(wrap_units("あいうえおかきくけこ。さし", 10), ["あいうえおかきくけこ。", "さし"])
+
+    def test_each_line_is_wrapped(self):
+        self.assertEqual(wrap_lines(["これはスマホではない。", "AIの相棒だ。"], 6), ["これはスマホ", "ではない。", "AIの相棒だ。"])
 
 
 @unittest.skipUnless(HAS_PIL, "Pillow が入っていません（run.bat -m pip install pillow）")

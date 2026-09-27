@@ -34,7 +34,7 @@ class FakeItem:
 
 class FakeTool:
     def __init__(self):
-        self.inputs = {"StyledText": "Custom Text"}
+        self.inputs = {"StyledText": "Custom Text", "Size": 0.08}
 
     def SetInput(self, key, value):
         self.inputs[key] = value
@@ -520,6 +520,20 @@ class PlaceTest(unittest.TestCase):
             (2, 0, 40, "ついに\niPhoneが来る。"), (2, 70, 80, "画面"), (3, 120, 30, "結果")])
         # テロップの動画は作らない・取り込まない
         self.assertEqual(project.pool.imports, [[p] for p in self.paths])
+
+    def test_text_telop_wraps_to_screen_width(self):
+        project = self.add_text_telops(FakeTemplate())
+        self.plan["telops"][0]["lines"] = ["AIを使った副業で、月8,000ドル超と報告されています。"]
+        self.run_place(project)
+        # Size 0.08 → 1行に全角11文字まで
+        self.assertEqual(self.text_telops(project)[0][3], "AIを使った副業で、\n月8,000ドル超と報告さ\nれています。")
+
+    def test_text_telop_line_chars_setting(self):
+        project = self.add_text_telops(FakeTemplate())
+        self.plan["telop_line_chars"] = 6
+        self.plan["telops"][0]["lines"] = ["これはスマホではない。"]
+        self.run_place(project)
+        self.assertEqual(self.text_telops(project)[0][3], "これはスマホ\nではない。")
 
     def test_text_telop_template_named_telop(self):
         project = self.add_text_telops(FakeTemplate(name=" Telop"))

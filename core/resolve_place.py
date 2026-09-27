@@ -8,8 +8,11 @@ Resolve Scripting API は環境によって挙動が違う点があるため、�
 - AppendToTimeline の endFrame が「含む」か「含まない」か（最初のクリップの長さで判定する）
 - 置いたクリップの長さが plan どおりか
 """
+import math
 import os
 from datetime import datetime
+
+from core.telop import wrap_lines
 
 # config.json の sizing → Resolve の「解像度が異なるファイル」の設定値
 SIZING = {"fit": "scaleToFit", "fill": "scaleToCrop"}
@@ -304,7 +307,6 @@ class Placer:
 
     def _place_text_telop(self, telop, template):
         track = 2 + telop.get("lane", 0)
-        text = "\n".join(telop["lines"])
         label = f"テロップ {telop['label']}「{' / '.join(telop['lines'])}」"
         if not self._ensure_tracks("video", track):
             self.warnings.append(f"{label}: ビデオトラック V{track} を追加できないため置けませんでした")
@@ -318,7 +320,7 @@ class Placer:
         if items[0].GetStart() != self.start + telop["record_frame"]:
             self.warnings.append(f"{label} の位置が想定と違います（予定: {telop['record_frame']}、実際: {items[0].GetStart() - self.start}フレーム）")
         for item in items:
-            if not _set_text(item, text):
+            if not _set_text(item, telop["lines"], self.plan.get("telop_line_chars") or 0):
                 self.warnings.append(f"{label}: 文字を入れられませんでした（ひな形が Text+ か確認してください）。Resolve で文字を入力してください")
                 break
 
@@ -387,8 +389,25 @@ class Placer:
             self.warnings.append(f"マーカーの位置が想定と違います（想定: {sorted(expected)}、実際: {sorted(actual)}）")
 
 
-def _set_text(item, text):
-    """Text+ のクリップの文字を text にする（ひな形の中の Text+ ツールすべて）。できたら True"""
+TEXT_WIDTH = 0.9          # 1行を画面の幅の何割までにするか
+DEFAULT_TEXT_SIZE = 0.08  # Text+ の文字の大きさ（Size）の既定値
+
+
+def line_units(size):
+    """Text+ の Size（画面の幅に対する文字の高さの割合）から、1行に入る全角文字数を見積もる"""
+    try:
+        size = float(size)
+    except (TypeError, ValueError):
+        size = DEFAULT_TEXT_SIZE
+    if not size > 0:
+        size = DEFAULT_TEXT_SIZE
+    return max(2, math.floor(TEXT_WIDTH / size))
+
+
+def _set_text(item, lines, line_chars=0):
+    """Text+ のクリップに文字を入れる（ひな形の中の Text+ ツールすべて）。できたら True。
+    Text+ は自動で折り返さないので、画面の幅に収まるように改行を入れる。
+    1行の文字数は line_chars（0 ならひな形の文字の大きさから計算）"""
     try:
         comp = item.GetFusionCompByIndex(1)
         tools = comp.GetToolList(False, "TextPlus") if comp else None
@@ -397,6 +416,8 @@ def _set_text(item, text):
     tools = list(tools.values()) if isinstance(tools, dict) else list(tools or [])
     if not tools:
         return False
+    units = line_chars if line_chars > 0 else line_units(tools[0].GetInput("Size"))
+    text = "\n".join(wrap_lines(lines, units))
     for tool in tools:
         tool.SetInput("StyledText", text)
     return tools[0].GetInput("StyledText") == text

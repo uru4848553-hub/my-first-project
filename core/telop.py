@@ -26,6 +26,49 @@ LINE_SPACING = 1.25
 BREAK_AFTER_OK = set("。、，．！？」』）)!?,.")   # 行頭に来ないようにする文字
 
 
+NO_LINE_START = set("。、，．！？」』）)!?,.ー～ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ")   # 行頭に来ないようにする文字
+BREAK_AFTER = set("、。，．！？」』）)!? 　")                                          # この文字のあとは改行しやすい
+
+
+def char_width(ch):
+    """全角＝1、半角（英数字・記号・半角カナ）＝0.55 として文字の幅を見積もる"""
+    import unicodedata
+    return 1.0 if unicodedata.east_asian_width(ch) in ("W", "F", "A") else 0.55
+
+
+def wrap_units(text, max_units):
+    """1行が max_units（全角何文字分）を超えないように改行位置を決めて、行のリストを返す。
+    なるべく「、」「。」や空白のあとで改行し、「。」などが行頭に来ないようにする"""
+    if max_units <= 0:
+        return [text]
+    lines, rest = [], text.strip()
+    while rest:
+        width, cut = 0.0, len(rest)
+        for i, ch in enumerate(rest):
+            width += char_width(ch)
+            if width > max_units + 1e-9:
+                cut = i
+                break
+        if cut >= len(rest):
+            lines.append(rest)
+            break
+        # 句読点・空白のあとで切れる位置が後ろ半分にあればそこで切る
+        best = max((i + 1 for i in range(cut) if rest[i] in BREAK_AFTER), default=0)
+        if best >= cut * 0.5:
+            cut = best
+        # 行頭禁則：次の行の頭に来てはいけない文字は前の行にぶら下げる
+        while cut < len(rest) and rest[cut] in NO_LINE_START:
+            cut += 1
+        lines.append(rest[:cut].rstrip())
+        rest = rest[cut:].lstrip(" 　")
+    return lines
+
+
+def wrap_lines(lines, max_units):
+    """台本の行（1行＝画面の1行）ごとに、長すぎれば折り返す"""
+    return [part for line in lines for part in wrap_units(line, max_units)]
+
+
 class TelopError(RuntimeError):
     pass
 
