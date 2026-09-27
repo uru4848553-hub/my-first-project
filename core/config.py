@@ -19,7 +19,9 @@ DEFAULTS = {
     # "video"：文字を描いた透明付きの動画を置く（以前の方式。下の telop_font 〜 telop_max_width はこのときの見た目）
     "telop_mode": "text",
     "telop_template": "テロップ",  # "text" のときに使う、メディアプールのひな形の名前
-    "telop_line_chars": 0,         # "text" のときの1行の文字数（全角）。0 ならひな形の文字の大きさから自動
+    "telop_line_chars": 0,
+    "telop_background": False,     # "text" のとき、テロップに黒い下地を付けるか（アプリのチェックで毎回選べる）
+    "telop_bg_opacity": 1.0,       # 下地の濃さ（0〜1。ツールが下地を付けるとき）         # "text" のときの1行の文字数（全角）。0 ならひな形の文字の大きさから自動
     "telop_font": "",              # 空ならメイリオ Bold など見つかったもの
     "telop_size": 80,              # 文字の大きさ（ピクセル）
     "telop_y": 0.25,               # 文字の縦位置（画面の上端 0 〜 下端 1。テロップのまとまりの中心）
@@ -53,6 +55,10 @@ def load_config(path=None):
     for key in ("telop_y", "telop_max_width"):
         if not isinstance(config[key], (int, float)) or not 0 < config[key] <= 1:
             raise ConfigError(f"config.json の {key} は 0 より大きく 1 以下の数にしてください（現在: {config[key]!r}）")
+    if not isinstance(config["telop_background"], bool):
+        raise ConfigError(f"config.json の telop_background は true か false にしてください（現在: {config['telop_background']!r}）")
+    if not isinstance(config["telop_bg_opacity"], (int, float)) or not 0 <= config["telop_bg_opacity"] <= 1:
+        raise ConfigError(f"config.json の telop_bg_opacity は 0〜1 の数にしてください（現在: {config['telop_bg_opacity']!r}）")
     if not isinstance(config["telop_line_chars"], int) or config["telop_line_chars"] < 0:
         raise ConfigError(f"config.json の telop_line_chars は 0 以上の整数にしてください（現在: {config['telop_line_chars']!r}）")
     if not isinstance(config["still_seconds"], (int, float)) or config["still_seconds"] <= 0:

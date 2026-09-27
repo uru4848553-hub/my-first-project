@@ -198,6 +198,8 @@ def build(folder, config, fake_align=False, title=None):
         plan["telop_mode"] = config["telop_mode"]
         plan["telop_template"] = config["telop_template"]
         plan["telop_line_chars"] = config["telop_line_chars"]
+        plan["telop_background"] = config["telop_background"]
+        plan["telop_bg_opacity"] = config["telop_bg_opacity"]
         if config["telop_mode"] == "video":
             check.errors.extend(apply_telops(plan, config))
 
@@ -273,6 +275,8 @@ def main(argv=None):
     mode.add_argument("--no-resolve", action="store_true", help="plan.json まで作り、Resolve には置かない")
     mode.add_argument("--from-plan", action="store_true", help="前回の output/plan.json を使って Resolve に置くだけ")
     parser.add_argument("--launch-resolve", action="store_true", help="Resolve が起動していなければ起動する")
+    parser.add_argument("--telop-bg", choices=("on", "off"),
+                        help="テロップに黒い下地を付ける（on）／付けない（off）。省略時は config.json の telop_background")
     parser.add_argument("--title", help="ビン・タイムラインの名前（省略時はフォルダ名）")
     parser.add_argument("--project", help="Resolve のこのプロジェクトに置く（なければ作る）。省略時は今開いているプロジェクト")
     args = parser.parse_args(argv)
@@ -288,6 +292,8 @@ def main(argv=None):
     except ConfigError as e:
         print(f"[エラー] {e}")
         return 1
+    if args.telop_bg:
+        config["telop_background"] = args.telop_bg == "on"
 
     plan = build(args.folder, config, fake_align=args.fake_align, title=args.title)
     if plan is None:

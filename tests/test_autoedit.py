@@ -112,12 +112,13 @@ class AutoeditTest(unittest.TestCase):
             f.write("テロップ：結果です\n")
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            code = autoedit.main([self.dir, "--fake-align", "--no-resolve", "--title", "iPhone未来予測"])
+            code = autoedit.main([self.dir, "--fake-align", "--no-resolve", "--title", "iPhone未来予測", "--telop-bg", "on"])
         self.assertEqual(code, 0, out.getvalue())
         with open(os.path.join(self.dir, "output", "plan.json"), encoding="utf-8") as f:
             plan = json.load(f)
         self.assertEqual((plan["name"], plan["run"]), ("iPhone未来予測", "動画_テスト"))
         self.assertEqual(plan["telop_mode"], "text")
+        self.assertTrue(plan["telop_background"])
         self.assertEqual(plan["telops"][0]["lines"], ["結果です"])
         self.assertNotIn("path", plan["telops"][0])
         self.assertFalse(os.path.exists(os.path.join(self.dir, "media", "_telop")))   # テキストなので動画は作らない

@@ -9,6 +9,8 @@
   "telop_mode": "text",
   "telop_template": "テロップ",
   "telop_line_chars": 0,
+  "telop_background": false,
+  "telop_bg_opacity": 1.0,
   "telop_font": "",
   "telop_size": 80,
   "telop_y": 0.25,

@@ -535,6 +535,42 @@ class PlaceTest(unittest.TestCase):
         self.run_place(project)
         self.assertEqual(self.text_telops(project)[0][3], "これはスマホ\nではない。")
 
+    def telop_inputs(self, project):
+        return [t.comp.tool.inputs for t in project.current.items if isinstance(t.item, FakeTemplate)]
+
+    def test_text_telop_without_background(self):
+        project = self.add_text_telops(FakeTemplate())
+        self.run_place(project)
+        self.assertTrue(all("Enabled8" not in i for i in self.telop_inputs(project)))
+
+    def test_text_telop_black_background(self):
+        project = self.add_text_telops(FakeTemplate())
+        self.plan["telop_background"] = True
+        self.plan["telop_bg_opacity"] = 0.8
+        _, warnings = self.run_place(project)
+        self.assertEqual(warnings, [])
+        for inputs in self.telop_inputs(project):
+            self.assertEqual((inputs["Enabled8"], inputs["ElementShape8"], inputs["Opacity8"]), (1, 2, 0.8))
+            self.assertEqual((inputs["Red8"], inputs["Green8"], inputs["Blue8"]), (0.0, 0.0, 0.0))
+
+    def test_background_template_is_preferred(self):
+        project = self.add_text_telops(FakeTemplate())
+        project.pool.root.subs[0].clips.append(FakeTemplate(name="テロップ下地"))
+        self.plan["telop_background"] = True
+        self.run_place(project)
+        used = {t.item.GetName() for t in project.current.items if isinstance(t.item, FakeTemplate)}
+        self.assertEqual(used, {"テロップ下地"})
+        self.assertTrue(all("Enabled8" not in i for i in self.telop_inputs(project)))   # ひな形の見た目のまま
+
+    def test_background_failure_is_one_warning(self):
+        project = self.add_text_telops(FakeTemplate())
+        self.plan["telop_background"] = True
+        orig = FakeTool.SetInput
+        FakeTool.SetInput = lambda self, k, v: orig(self, k, v) if k == "StyledText" else None
+        self.addCleanup(setattr, FakeTool, "SetInput", orig)
+        _, warnings = self.run_place(project)
+        self.assertEqual(sum("黒い下地を付けられませんでした" in w for w in warnings), 1)
+
     def test_text_telop_template_named_telop(self):
         project = self.add_text_telops(FakeTemplate(name=" Telop"))
         _, warnings = self.run_place(project)

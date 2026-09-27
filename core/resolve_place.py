@@ -18,6 +18,9 @@ from core.telop import wrap_lines
 SIZING = {"fit": "scaleToFit", "fill": "scaleToCrop"}
 DEFAULT_TEMPLATE = "テロップ"
 TEMPLATE_ALIASES = ("テロップ", "telop")   # この名前のひな形も使う（大文字・小文字、前後の空白は区別しない）
+# 下地付きのひな形（あればこちらを使う。なければ普通のひな形に、ツールが黒い下地を付ける）
+BG_TEMPLATE_ALIASES = ("テロップ下地", "テロップ_下地", "telop下地", "telop_下地", "telop_bg", "telopbg")
+BG_ELEMENT = 8            # Text+ の「シェーディング」の何番の要素を下地に使うか（ひな形が使っていなさそうな最後の番号）
 TEMPLATE_HELP = ("Resolve のメディアプールに、テロップのひな形（Text+）を「{name}」という名前で用意してください："
                  "エフェクト → タイトル → Fusionタイトル →「Text+」をタイムラインに置き、フォント・大きさ・位置・色を整えてから、"
                  "そのクリップをメディアプールへドラッグし、名前を「{name}」に変える（プロジェクトごとに1回）")
@@ -56,6 +59,8 @@ class Placer:
         self.alpha_done = set()
         self.alpha_warned = False
         self.clip_audio_warned = False
+        self.bg_warned = False
+        self.telop_bg = None
 
     # --- 準備 ---------------------------------------------------------
 
@@ -294,7 +299,15 @@ class Placer:
         """テロップを、メディアプールのひな形（Text+）から V2（重なるときは V3 …）に置き、文字を入れる。
         Resolve 上でそのまま文字・見た目を直せる。うまくいかなくても警告にとどめる。"""
         name = self.plan.get("telop_template") or DEFAULT_TEMPLATE
-        template = self._find_clip((name,) + TEMPLATE_ALIASES)
+        template = None
+        self.telop_bg = None       # 下地をツールで付けるときの設定（下地付きのひな形を使うとき・下地なしのときは None）
+        if self.plan.get("telop_background"):
+            template = self._find_clip(BG_TEMPLATE_ALIASES)
+            if template is not None:
+                self.log(f"下地付きのテロップのひな形「{template.GetName()}」を使います")
+            else:
+                self.telop_bg = {"opacity": self.plan.get("telop_bg_opacity", 1.0)}
+        template = template or self._find_clip((name,) + TEMPLATE_ALIASES)
         if template is None:
             self.warnings.append(f"テロップのひな形（名前が「{name}」か「telop」のもの）がメディアプールにないため、テロップ（{len(telops)}件）を置けませんでした。"
                                  + TEMPLATE_HELP.format(name=name))
@@ -339,6 +352,10 @@ class Placer:
             if not _set_text(item, telop["lines"], self.plan.get("telop_line_chars") or 0):
                 self.warnings.append(f"{label}: 文字を入れられませんでした（ひな形が Text+ か確認してください）。Resolve で文字を入力してください")
                 break
+            if self.telop_bg is not None and not _set_background(item, self.telop_bg["opacity"]) and not self.bg_warned:
+                self.bg_warned = True
+                self.warnings.append("テロップに黒い下地を付けられませんでした。下地付きのひな形を「テロップ下地」という名前で"
+                                     "メディアプールに用意すると、そちらを使います（取扱説明書「テロップの下地」）")
 
     def _place_sfx(self, sfx, item):
         """効果音を BGM の次のオーディオトラック（重なるときはさらに次）に、ファイルの長さのまま置く。"""
@@ -437,6 +454,38 @@ def _set_text(item, lines, line_chars=0):
     for tool in tools:
         tool.SetInput("StyledText", text)
     return tools[0].GetInput("StyledText") == text
+
+
+def _text_tools(item):
+    try:
+        comp = item.GetFusionCompByIndex(1)
+        tools = comp.GetToolList(False, "TextPlus") if comp else None
+    except Exception:  # Fusion を持たないクリップなど
+        return []
+    return list(tools.values()) if isinstance(tools, dict) else list(tools or [])
+
+
+def _set_background(item, opacity=1.0):
+    """Text+ に黒い下地（文字の後ろの箱）を付ける。Text+ の「シェーディング」の要素 BG_ELEMENT を
+    「Border Fill（行ごとの箱）」・黒にする。文字の行数・位置が変わっても下地がついてくる。付けられたら True"""
+    n = BG_ELEMENT
+    tools = _text_tools(item)
+    if not tools:
+        return False
+    tool = tools[0]
+    settings = {
+        f"Enabled{n}": 1,
+        f"ElementShape{n}": 2,        # 0: Text Fill、1: Text Outline、2: Border Fill、3: Border Outline
+        f"Level{n}": 1,               # 0: テキスト全体、1: 行ごと、2: 単語、3: 文字
+        f"Red{n}": 0.0, f"Green{n}": 0.0, f"Blue{n}": 0.0, f"Alpha{n}": 1.0,
+        f"Opacity{n}": float(opacity),
+        f"ExtendHorizontal{n}": 0.2,  # 文字の左右・上下に少し余白
+        f"ExtendVertical{n}": 0.1,
+        f"Priority{n}": -1,           # 文字より後ろに描く
+    }
+    for key, value in settings.items():
+        tool.SetInput(key, value)
+    return tool.GetInput(f"Enabled{n}") == 1 and tool.GetInput(f"ElementShape{n}") == 2
 
 
 def check_plan(plan):

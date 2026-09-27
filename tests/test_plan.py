@@ -219,7 +219,8 @@ class ConfigTest(unittest.TestCase):
 
     def test_invalid(self):
         for text in ('{"fps": 0}', '{"sizing": "stretch"}', '{"width": "1080"}', '{broken',
-                     '{"telop_size": 0}', '{"telop_y": 1.5}', '{"telop_max_width": "0.9"}'):
+                     '{"telop_size": 0}', '{"telop_y": 1.5}', '{"telop_max_width": "0.9"}',
+                     '{"telop_background": "yes"}', '{"telop_bg_opacity": 2}'):
             with self.subTest(text=text):
                 self.write(text)
                 with self.assertRaises(ConfigError):
