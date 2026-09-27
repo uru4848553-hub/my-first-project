@@ -168,7 +168,7 @@ class App:
         step3 = ttk.LabelFrame(outer, text=" ③ ナレーションと BGM ", padding=8)
         step3.grid(row=2, column=0, sticky="ew", pady=(10, 0))
         step3.columnconfigure(1, weight=1)
-        ttk.Label(step3, text="ナレーション").grid(row=0, column=0, sticky="w")
+        ttk.Label(step3, text="ナレーション（なくてもよい）").grid(row=0, column=0, sticky="w")
         ttk.Entry(step3, textvariable=self.narration, state="readonly").grid(row=0, column=1, sticky="ew", padx=6)
         nbtns = ttk.Frame(step3)
         nbtns.grid(row=0, column=2)
@@ -278,12 +278,11 @@ class App:
         missing += [k for k in self.sfx_uses if k not in self.materials]
         if not self.sections:
             self.status.set("② 台本を入力してください")
-        elif not self.narration.get():
-            self.status.set("③ ナレーションの音声を選んでください")
         elif missing:
             self.status.set(f"④ 素材・効果音を選んでください（残り {len(missing)} 件：{', '.join(missing[:5])}{' …' if len(missing) > 5 else ''}）")
         else:
-            self.status.set("準備ができました。「スタート」を押してください")
+            self.status.set("準備ができました。「スタート」を押してください"
+                            + ("" if self.narration.get() else "（ナレーションなし：動画の長さで並べ、動画の音声を使います）"))
 
     def _fill_table(self):
         self.table.delete(*self.table.get_children())

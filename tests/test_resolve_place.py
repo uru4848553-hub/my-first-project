@@ -556,6 +556,18 @@ class PlaceTest(unittest.TestCase):
         self.assertIn("ひな形（名前が「テロップ」か「telop」のもの）がメディアプールにない", warnings[0])
         self.assertEqual(check_plan(self.plan), [])     # テキストのテロップはファイル不要
 
+    def test_without_narration_places_clip_audio(self):
+        self.plan["audio"] = None
+        project = FakeProject()
+        _, warnings = self.run_place(project)
+        self.assertEqual(warnings, [])
+        audio = [(t.track, t.start - START, t.duration, os.path.basename(t.item.path))
+                 for t in project.current.items if t.media_type == 2]
+        # 動画（S01・S03[a]）の音声だけを A1 に、映像と同じ範囲で。静止画の動画・最終フレームには置かない
+        self.assertEqual(audio, [(1, 0, 40, "S01_a.mp4"), (1, 70, 20, "S03a_c.mov")])
+        self.assertNotIn(self.paths[-1], [p[0] for p in project.pool.imports])   # ナレーションは取り込まない
+        self.assertEqual(check_plan(self.plan), [])
+
     def test_run_bin_inside_title_bin(self):
         self.plan["run"] = "20260927_103005"
         project = FakeProject()

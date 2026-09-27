@@ -25,6 +25,8 @@ def build_report(check, rows=None, extra=None):
            f"作成: {datetime.now():%Y-%m-%d %H:%M}", ""]
     if check.audio:
         out += [f"ナレーション: `{os.path.basename(check.audio)}`", ""]
+    else:
+        out += ["ナレーション: なし（動画の長さで並べ、動画の音声を使う）", ""]
     if getattr(check, "bgm", None):
         out += [f"BGM: `{os.path.basename(check.bgm)}`", ""]
 

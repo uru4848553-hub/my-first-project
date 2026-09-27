@@ -19,8 +19,9 @@ def to_frames(starts, audio_duration, fps):
 
 
 def build_plan(check, timings, audio_duration, config, match_ratio=None, fake=False, bgm_duration=None,
-               sfx_durations=None):
+               sfx_durations=None, no_narration=False):
     """check: core.checks.ProjectCheck、timings: core.align.SectionTiming のリスト（entries と同じ順）
+    no_narration: ナレーションなし（timings は素材の長さから作ったもの、audio_duration は全体の長さ）
     sfx_durations: {効果音ID: 長さ（秒）}
 
     戻り値: (plan 辞書, エラー, 警告)
@@ -34,7 +35,7 @@ def build_plan(check, timings, audio_duration, config, match_ratio=None, fake=Fa
         if starts[i] < starts[i - 1]:
             errors.append(f"{check.entries[i].section.label} の開始時刻（{starts[i]:.2f}秒）が直前のセクションより前です"
                           "（アライメント失敗の可能性）")
-    if starts and starts[-1] >= audio_duration:
+    if starts and starts[-1] >= audio_duration and not no_narration:
         errors.append(f"{check.entries[-1].section.label} の開始時刻が音声の長さ（{audio_duration:.2f}秒）を超えています")
 
     if fake:
@@ -57,7 +58,7 @@ def build_plan(check, timings, audio_duration, config, match_ratio=None, fake=Fa
             errors.append(f"{sec.label} の尺が0フレーム以下です（アライメント失敗の可能性）")
         elif dur_f < fps:
             sec_warnings.append(f"尺が1秒未満（{dur_f / fps:.2f}秒）")
-        if fake:
+        if fake or no_narration:
             pass
         elif t.confidence is None:
             sec_warnings.append("台本の文字と対応する単語がない（読み上げと台本が違う可能性）")
@@ -94,7 +95,9 @@ def build_plan(check, timings, audio_duration, config, match_ratio=None, fake=Fa
         "width": config["width"],
         "height": config["height"],
         "sizing": config["sizing"],
-        "audio": {"path": os.path.abspath(check.audio), "duration_sec": round(audio_duration, 3), "frames": total},
+        "audio": ({"path": os.path.abspath(check.audio), "duration_sec": round(audio_duration, 3), "frames": total}
+                  if check.audio else None),
+        "no_narration": not check.audio,
         "total_frames": total,
         "bgm": _bgm(check, bgm_duration, fps, total, warnings),
         "sections": sections,

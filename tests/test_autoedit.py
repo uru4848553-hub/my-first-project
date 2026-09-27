@@ -132,6 +132,26 @@ class AutoeditTest(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(os.path.join(past, runs[0]))), ["plan.json", "report.md"])
         self.assertTrue(os.path.isfile(os.path.join(self.dir, "output", "plan.json")))
 
+    def test_without_narration_uses_media_lengths(self):
+        shutil.rmtree(os.path.join(self.dir, "audio"))
+        out = io.StringIO()
+        with mock.patch("core.align.load_model") as load, contextlib.redirect_stdout(out):
+            code = autoedit.main([self.dir, "--no-resolve"])
+        self.assertEqual(code, 0, out.getvalue())
+        load.assert_not_called()                     # 読み上げの解析はしない
+        with open(os.path.join(self.dir, "output", "plan.json"), encoding="utf-8") as f:
+            plan = json.load(f)
+        self.assertIsNone(plan["audio"])
+        self.assertTrue(plan["no_narration"])
+        # 動画はその長さ（5秒・1秒）、画像は3秒
+        self.assertEqual([(s["label"], s["start_frame"], s["duration_frames"]) for s in plan["sections"]],
+                         [("S01", 0, 150), ("S02", 150, 90), ("S03[a]", 240, 30), ("S03[b]", 270, 90)])
+        self.assertEqual(plan["total_frames"], 360)
+        self.assertEqual([s["freeze_frames"] for s in plan["sections"]], [0, 0, 0, 0])
+        self.assertEqual([s["warnings"] for s in plan["sections"]], [[], [], [], []])
+        with open(os.path.join(self.dir, "output", "report.md"), encoding="utf-8") as f:
+            self.assertIn("ナレーション: なし", f.read())
+
     def test_from_plan_without_plan(self):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):

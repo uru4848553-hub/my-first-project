@@ -145,19 +145,18 @@ class FindAudioTest(FolderTestCase):
                 self.assertEqual(errors, [])
                 self.assertEqual(os.path.basename(path), name)
 
-    def test_none(self):
+    def test_none_is_ok(self):
+        # ナレーションはなくてもよい（動画にナレーションが入っている場合）
         self.make(audio=["memo.txt"])
-        _, errors = find_audio(os.path.join(self.dir, "audio"))
-        self.assertError(errors, "ありません")
+        self.assertEqual(find_audio(os.path.join(self.dir, "audio")), (None, []))
 
     def test_two(self):
         self.make(audio=["a.wav", "b.mp3"])
         _, errors = find_audio(os.path.join(self.dir, "audio"))
         self.assertError(errors, "1本だけ")
 
-    def test_missing_folder(self):
-        _, errors = find_audio(os.path.join(self.dir, "audio"))
-        self.assertError(errors, "audio フォルダがありません")
+    def test_missing_folder_is_ok(self):
+        self.assertEqual(find_audio(os.path.join(self.dir, "audio")), (None, []))
 
 
 class CheckProjectTest(FolderTestCase):
@@ -208,9 +207,15 @@ class CheckProjectTest(FolderTestCase):
         self.assertIn("台本に [a] [b] … のマーカーがありません", errors[0])
 
     def test_audio_errors_are_collected_with_others(self):
-        errors = self.errors_of(media=["S01_a.mp4"], audio=[])
-        self.assertError(errors, "音声ファイル")
+        errors = self.errors_of(media=["S01_a.mp4"], audio=["a.wav", "b.wav"])
+        self.assertError(errors, "1本だけ")
         self.assertError(errors, "S02")
+
+    def test_no_narration_is_a_warning(self):
+        check = check_project(self.make(audio=None))
+        self.assertEqual(check.errors, [])
+        self.assertIsNone(check.audio)
+        self.assertTrue(any("ナレーションがありません" in w for w in check.warnings))
 
     def test_script_errors_skip_matching(self):
         errors = self.errors_of(script="## S1\n一。\n", media=["S01_a.mp4"])

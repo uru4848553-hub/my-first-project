@@ -105,12 +105,13 @@ def scan_media(media_dir):
 
 
 def find_audio(audio_dir):
-    """audio/ の音声ファイルを1本探し、(パス or None, エラー) を返す。"""
+    """audio/ のナレーション（なくてもよい）を1本探し、(パス or None, エラー) を返す。
+    ない場合は、動画の長さで並べ、動画の音声を使う（動画にナレーションが入っている場合のため）"""
     if not os.path.isdir(audio_dir):
-        return None, [f"audio フォルダがありません: {audio_dir}"]
+        return None, []
     found = [n for n in _list_files(audio_dir) if os.path.splitext(n)[1][1:].lower() in AUDIO_EXTS]
     if not found:
-        return None, ["audio フォルダに音声ファイル（wav, mp3, m4a）がありません"]
+        return None, []
     if len(found) > 1:
         return None, [f"audio フォルダの音声ファイルは1本だけにしてください（{', '.join(found)}）"]
     return os.path.join(audio_dir, found[0]), []

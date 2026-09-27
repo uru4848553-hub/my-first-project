@@ -114,8 +114,9 @@ def assemble(base_dir, name, script_text, narration, materials, bgm=None, log=pr
     with open(os.path.join(folder, "script.md"), "w", encoding="utf-8") as fp:
         fp.write(script_text if script_text.endswith("\n") else script_text + "\n")
 
-    log("ナレーションをコピー中...")
-    _copy_files(os.path.join(folder, "audio"), [(narration, os.path.basename(narration))])
+    if narration:
+        log("ナレーションをコピー中...")
+        _copy_files(os.path.join(folder, "audio"), [(narration, os.path.basename(narration))])
     if bgm:
         _copy_files(os.path.join(folder, "bgm"), [(bgm, os.path.basename(bgm))])
 
@@ -135,7 +136,7 @@ def validate(sections, narration, materials, bgm=None, sfx_ids=()):
     if not sections:
         problems.append("台本にシーン（## S01 など）がありません")
     if not narration:
-        problems.append("ナレーションの音声ファイルを選んでください")
+        pass    # ナレーションはなくてもよい（動画の長さで並べ、動画の音声を使う）
     elif not os.path.isfile(narration):
         problems.append(f"ナレーションのファイルがありません: {narration}")
     elif ext_of(narration) not in AUDIO_EXTS:

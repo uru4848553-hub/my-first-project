@@ -55,6 +55,7 @@ class Placer:
         self.narration_track = 1
         self.alpha_done = set()
         self.alpha_warned = False
+        self.clip_audio_warned = False
 
     # --- 準備 ---------------------------------------------------------
 
@@ -84,7 +85,8 @@ class Placer:
         else:
             for telop in telops:
                 self._place_telop(telop, items[_norm(telop["path"])])
-        self._place_narration(items[_norm(self.plan["audio"]["path"])])
+        if self.plan.get("audio"):
+            self._place_narration(items[_norm(self.plan["audio"]["path"])])
         if self.plan.get("bgm"):
             self._place_bgm(items[_norm(self.plan["bgm"]["path"])])
         for sfx in self.plan.get("sfx") or []:
@@ -104,7 +106,9 @@ class Placer:
 
     def _import(self, folder):
         """素材とナレーションをビンに取り込む。同じファイルが取り込み済みなら使い回す。"""
-        paths = [c["path"] for s in self.plan["sections"] for c in s["clips"]] + [self.plan["audio"]["path"]]
+        paths = [c["path"] for s in self.plan["sections"] for c in s["clips"]]
+        if self.plan.get("audio"):
+            paths.append(self.plan["audio"]["path"])
         if self.plan.get("bgm"):
             paths.append(self.plan["bgm"]["path"])
         if telop_mode(self.plan) == "video":
@@ -219,6 +223,18 @@ class Placer:
                 f"{label} の位置・長さが配置表と違います（予定: {pos}から{frames}フレーム、"
                 f"実際: {placed.GetStart() - self.start}から{got}フレーム。素材の FPS {item.GetClipProperty('FPS')}、"
                 f"長さ {item.GetClipProperty('Frames')} フレーム、渡した endFrame {src}）")
+        if not self.plan.get("audio") and clip["type"] == "video":
+            self._place_clip_audio(label, item, pos, src)
+
+    def _place_clip_audio(self, label, item, pos, src):
+        """ナレーションがないとき：動画の音声を A1 に、映像と同じ範囲で置く（音声のない動画はそのまま）"""
+        info = {"mediaPoolItem": item, "startFrame": 0, "endFrame": src - 1 if self.end_inclusive else src,
+                "trackIndex": 1, "mediaType": 2, "recordFrame": self.start + pos}
+        if item.GetClipProperty("Audio Ch") in ("0", 0):
+            return
+        if self._append(info) is None and not self.clip_audio_warned:
+            self.clip_audio_warned = True
+            self.warnings.append(f"{label} などの動画の音声を A1 に置けませんでした（音声のない動画なら問題ありません）")
 
     def _ensure_tracks(self, kind, count, sub_type=None):
         while self.timeline.GetTrackCount(kind) < count:
@@ -433,7 +449,7 @@ def check_plan(plan):
         for clip in sec["clips"]:
             if not os.path.isfile(clip["path"]):
                 problems.append(f"{sec['label']}: ファイルがありません: {clip['path']}")
-    if not os.path.isfile(plan["audio"]["path"]):
+    if plan.get("audio") and not os.path.isfile(plan["audio"]["path"]):
         problems.append(f"ナレーションがありません: {plan['audio']['path']}")
     if plan.get("bgm") and not os.path.isfile(plan["bgm"]["path"]):
         problems.append(f"BGM がありません: {plan['bgm']['path']}")

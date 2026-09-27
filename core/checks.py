@@ -121,6 +121,8 @@ def check_project(folder):
 
     result.audio, audio_errors = find_audio(os.path.join(folder, "audio"))
     result.errors.extend(audio_errors)
+    if result.audio is None and not audio_errors:
+        result.warnings.append("ナレーションがありません。動画はその長さのまま、画像は決まった秒数で並べ、動画の音声も置きます")
 
     result.bgm, bgm_errors = find_bgm(os.path.join(folder, "bgm"))
     result.errors.extend(bgm_errors)

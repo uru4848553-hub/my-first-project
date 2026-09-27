@@ -71,6 +71,34 @@ def archive_output(folder):
     return dst
 
 
+def media_timings(check, config):
+    """ナレーションがないとき：動画はその長さのまま、画像は still_seconds 秒で、シーンを順に並べる。
+    戻り値: (SectionTiming のリスト, 全体の長さ（秒）)。読めない素材があれば (None, None)"""
+    from core.align import SectionTiming
+    from core.ffmpeg import FFmpegError, probe_video
+    from core.fit import video_frames
+
+    fps = config["fps"]
+    timings, frame = [], 0
+    for e in check.entries:
+        if e.media.kind == "video":
+            try:
+                frames = video_frames(probe_video(e.media.path)["duration"], fps)
+            except FFmpegError as err:
+                check.errors.append(f"{e.section.label}: 動画を読めません（{e.media.name}）: {err}")
+                continue
+        else:
+            frames = round(config["still_seconds"] * fps)
+        if frames <= 0:
+            check.errors.append(f"{e.section.label}: 動画が短すぎます（{e.media.name}）")
+            continue
+        timings.append(SectionTiming(start=frame / fps, confidence=None, word_count=0))
+        frame += frames
+    if check.errors:
+        return None, None
+    return timings, frame / fps
+
+
 def build(folder, config, fake_align=False, title=None):
     """フェーズ1〜3。成功すれば plan を、失敗すれば None を返す"""
     if os.path.isdir(folder):
@@ -89,14 +117,17 @@ def build(folder, config, fake_align=False, title=None):
     from core.plan import build_plan, report_extra, report_rows, write_plan
     from core.telop import apply_telops
 
-    try:
-        duration = probe_duration(check.audio)
-    except FFmpegError as e:
-        check.errors.append(f"ナレーション音声を読めません: {e}")
-        write_report(check)
-        print_messages(check)
-        return None
-    print(f"ナレーション: {os.path.basename(check.audio)}（{duration:.1f}秒）")
+    if check.audio:
+        try:
+            duration = probe_duration(check.audio)
+        except FFmpegError as e:
+            check.errors.append(f"ナレーション音声を読めません: {e}")
+            write_report(check)
+            print_messages(check)
+            return None
+        print(f"ナレーション: {os.path.basename(check.audio)}（{duration:.1f}秒）")
+    else:
+        print("ナレーション: なし（動画はその長さ、画像は {:g} 秒で並べ、動画の音声を使います）".format(config["still_seconds"]))
     bgm_duration = None
     if check.bgm:
         try:
@@ -121,8 +152,16 @@ def build(folder, config, fake_align=False, title=None):
     sections = [e.section for e in check.entries]
     started = time.time()
     ratio = None
+    if not check.audio:
+        timings, duration = media_timings(check, config)
+        if timings is None:
+            write_report(check)
+            print_messages(check)
+            return None
     try:
-        if fake_align:
+        if not check.audio:
+            pass
+        elif fake_align:
             print("[警告] --fake-align：Whisper を使わず、原稿の文字数で時間を割り振ります（配置のテスト用）")
             timings = proportional_timings(sections, duration)
         else:
@@ -136,10 +175,12 @@ def build(folder, config, fake_align=False, title=None):
         write_report(check)
         print_messages(check)
         return None
-    print(f"アライメント完了（{time.time() - started:.0f}秒）")
+    if check.audio:
+        print(f"アライメント完了（{time.time() - started:.0f}秒）")
 
     plan, plan_errors, plan_warnings = build_plan(check, timings, duration, config, ratio, fake=fake_align,
-                                                   bgm_duration=bgm_duration, sfx_durations=sfx_durations)
+                                                   bgm_duration=bgm_duration, sfx_durations=sfx_durations,
+                                                   no_narration=not check.audio)
     check.errors.extend(plan_errors)
     check.warnings.extend(plan_warnings)
     if title:

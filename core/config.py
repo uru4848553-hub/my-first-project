@@ -12,6 +12,8 @@ DEFAULTS = {
     "whisper_model": "large-v3",
     # セクション内の単語の平均確率がこれ未満なら「信頼度が低い」と警告する
     "low_confidence": 0.5,
+    # ナレーションがないとき、画像（静止画）のシーンを何秒にするか
+    "still_seconds": 3.0,
     # テロップ（台本の「テロップ：〜」）
     # "text"：Resolve のメディアプールのひな形（Text+）を置いて文字を入れる（Resolve で直せる）
     # "video"：文字を描いた透明付きの動画を置く（以前の方式。下の telop_font 〜 telop_max_width はこのときの見た目）
@@ -53,6 +55,8 @@ def load_config(path=None):
             raise ConfigError(f"config.json の {key} は 0 より大きく 1 以下の数にしてください（現在: {config[key]!r}）")
     if not isinstance(config["telop_line_chars"], int) or config["telop_line_chars"] < 0:
         raise ConfigError(f"config.json の telop_line_chars は 0 以上の整数にしてください（現在: {config['telop_line_chars']!r}）")
+    if not isinstance(config["still_seconds"], (int, float)) or config["still_seconds"] <= 0:
+        raise ConfigError(f"config.json の still_seconds は正の数にしてください（現在: {config['still_seconds']!r}）")
     if config["telop_mode"] not in ("text", "video"):
         raise ConfigError(f"config.json の telop_mode は \"text\" か \"video\" にしてください（現在: {config['telop_mode']!r}）")
     if not isinstance(config["telop_template"], str) or not config["telop_template"].strip():

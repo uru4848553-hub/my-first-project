@@ -62,10 +62,18 @@ class AssembleTest(unittest.TestCase):
         materials["S02"] = self.f("b.gif")
         problems = validate(self.sections, "", materials, bgm=self.f("bgm.txt"))
         text = "\n".join(problems)
-        self.assertIn("ナレーションの音声ファイルを選んで", text)
         self.assertIn("BGM は wav / mp3 / m4a", text)
         self.assertIn("素材が選ばれていないシーンがあります: S03[b]", text)
         self.assertIn("S02 の素材は mp4", text)
+
+    def test_without_narration(self):
+        materials = {"S01": self.f("a.mp4"), "S02": self.f("b.png"), "S03a": self.f("c.mov"), "S03b": self.f("d.jpg")}
+        self.assertEqual(validate(self.sections, "", materials), [])
+        folder = assemble(self.dir, "動画", SCRIPT, "", materials, log=lambda m: None)
+        self.assertFalse(os.path.exists(os.path.join(folder, "audio")))
+        check = check_project(folder)
+        self.assertEqual(check.errors, [])
+        self.assertIsNone(check.audio)
 
     def test_validate_sfx(self):
         narration = self.f("n.mp3")
