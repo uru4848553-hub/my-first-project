@@ -28,12 +28,21 @@ for x in (-35.0, 0.0, 35.0):
         POCKETS.append((x, y, 15.4, 12.5, 2.0))
     # 3) 上端の縦長スロット
     POCKETS.append((x, 73.3, 19.0, 45.0, 2.0))
-# 4) 両側の縦通路と上端スロット（x=±70）
+# 4) 両側の縦通路・上端スロット（x=±70）・横腕・ベイ（図面の外側の線で寸法を取る）
+TAB_H = 17.0                                               # 横腕の上端寸法（外側の線）
+TAB_Y = [25.25 + 33.0 * i for i in range(-3, 2)]            # 横腕5段の中心Y
+BAYS = []                                                   # ベイ: (yLo, yHi, 下側フックあり, 上側フックあり)
+for i in range(-3, 0):                                      # 横腕どうしの間の4か所
+    BAYS.append((TAB_Y[i + 3] + TAB_H / 2, TAB_Y[i + 4] - TAB_H / 2, True, True))
+BAYS.append((TAB_Y[4] + TAB_H / 2, 82.6, True, False))      # 最上段の横腕より上: 下側の隅のみ
+BAYS.append((-93.5, TAB_Y[0] - TAB_H / 2, False, True))     # 最下段の横腕より下: 上側の隅のみ
 for s in (-1, 1):
-    POCKETS.append((s * 70.0, 70.0, 19.4, 51.0, 2.5))      # 上端スロット
-    POCKETS.append((s * 70.0, -11.0, 14.6, 154.0, 2.0))     # 縦通路
-    for y in ROW_RC + [-7.5 + 33.0 * 2]:                    # 横腕（最上段を含む5段）
-        POCKETS.append((s * 78.6, y, 31.9, 12.7, 2.5))
+    POCKETS.append((s * 70.0, 70.0, 19.4, 51.0, 2.5))       # 上端スロット
+    POCKETS.append((s * 70.45, -11.0, 15.5, 154.0, 2.0))    # 縦通路
+    for y in TAB_Y:                                         # 横腕
+        POCKETS.append((s * 79.35, y, 33.3, TAB_H, 2.5))
+    for ylo, yhi, _, _ in BAYS:                             # ベイ（通路から外側へ広がる凹み）
+        POCKETS.append((s * 81.0, (ylo + yhi) / 2, 8.6, yhi - ylo, 2.0))
 # 5) 下端の半開きクリップ凹み
 for x in (-52.5, -17.5, 17.5, 52.5):
     POCKETS.append((x, -87.0, 16.0, 13.0, 2.0))
@@ -41,19 +50,29 @@ for x in (-52.5, -17.5, 17.5, 52.5):
 # クリップ（L字フック）: 図面の拡大図より。凹みの上縁の隅から内側へ張り出すつば状ブロック。
 # 凹み中心から見て |x| 2.6〜7.95、|y| 4.3〜8.1（上面図）、z は上面から約6.3mm下(34.2)〜上面。
 HOOK_X, HOOK_Y, HOOK_BOT = (2.6, 9.6), (4.3, 9.6), 34.2   # 壁側は凹みの縁より外まで伸ばして壁と一体にする
-HOOKS = []   # (中心x, 中心y, sx, sy)
+HOOKS = []   # (x0, x1, y0, y1) 絶対座標の箱
+def _box(cx, cy, sx, sy):
+    xs = sorted((cx + sx * HOOK_X[0], cx + sx * HOOK_X[1]))
+    ys = sorted((cy + sy * HOOK_Y[0], cy + sy * HOOK_Y[1]))
+    return (xs[0], xs[1], ys[0], ys[1])
 for x, y in SQUARES:
     for sx in (-1, 1):
         for sy in (-1, 1):
-            HOOKS.append((x, y, sx, sy))
+            HOOKS.append(_box(x, y, sx, sy))
 for x in (-52.5, -17.5, 17.5, 52.5):          # 下端の半開き凹みは図の上側(凹みの+Y側)の2隅のみ
     for sx in (-1, 1):
-        HOOKS.append((x, -75.7, sx, -1))      # y=-85.3〜-80.0 に置く
+        HOOKS.append(_box(x, -75.7, sx, -1))  # y=-85.3〜-80.0 に置く
+# ベイのフック: 外側(壁側)の x=79.8〜86、横腕の縁から約3.6mm
+for s in (-1, 1):
+    for ylo, yhi, low, up in BAYS:
+        xa, xb = sorted((s * 79.8, s * 86.0))
+        if low:
+            HOOKS.append((xa, xb, ylo, ylo + 3.6))
+        if up:
+            HOOKS.append((xa, xb, yhi - 3.6, yhi))
 
 
-def hook(x, y, sx, sy):
-    x0, x1 = sorted((x + sx * HOOK_X[0], x + sx * HOOK_X[1]))
-    y0, y1 = sorted((y + sy * HOOK_Y[0], y + sy * HOOK_Y[1]))
+def hook(x0, x1, y0, y1):
     return (cq.Workplane("XY").workplane(offset=HOOK_BOT)
             .center((x0 + x1) / 2, (y0 + y1) / 2).sketch().rect(x1 - x0, y1 - y0)
             .vertices().fillet(1.0).finalize().extrude(H - HOOK_BOT))
@@ -91,8 +110,8 @@ def body(d):
     for x, hw, pts in RAMPS:
         s = s.union(ramp(x, hw, pts, d))
     if d == 0:                         # フックは中実のブロックとして外形側にだけ足す
-        for x, y, sx, sy in HOOKS:
-            s = s.union(hook(x, y, sx, sy))
+        for box in HOOKS:
+            s = s.union(hook(*box))
     return s
 
 
