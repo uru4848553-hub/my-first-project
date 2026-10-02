@@ -7,7 +7,8 @@
   * 内側は低い「床」(z=FL_FIELD)。凹みではなく、床から柱が立っている。
   * 柱: 台形の柱(底18.5→上15.9)。上端6.5mmは十字形（四隅を段落ち＝クリップ/L字フック）。
         内側4列×4行=16本。上端・下端・左右の外周にも同じ柱が並び、リムとつながる。
-  * 溝(低い部分 z=DIP): 長方形の窪み、上端スロット、左右の縦通路と横腕、下端の縦長凹み。
+  * 棚(z=SHELF): 上端スロット、左右の縦通路と横腕、下端の縦長凹み。底は床より高い位置にある。
+  * 長方形の窪み: 床から浅く(PAD_DEPTH)下がる。
 """
 import math
 import cadquery as cq
@@ -18,7 +19,8 @@ H = 40.5                       # 全高
 T = 0.8                        # 板厚
 R = 15.0                       # 外形コーナー R15
 FL_FIELD = 6.3                 # 床(柱の根元)の高さ  (A-A断面)
-DIP = 4.0                      # 溝の底の高さ        (A-A/B-B断面)
+SHELF = 23.5                   # 横腕・通路・スロットの底（棚）の高さ (A-A/B-B断面の細線 z≈23.5、写真の「浅い棚」)
+PAD_DEPTH = 1.2                # 長方形の窪みの深さ（床から）
 WALL_DRAFT = math.degrees(math.atan(((W0 - W1) / 2) / H))
 
 PITCH = 35.0
@@ -35,27 +37,24 @@ FIELD = dict(x0=-96.0, x1=96.0, y0=-95.0, y1=93.8, r=8.0)
 # 柱の中心から |x| 2.9〜、|y| 4.3〜 の四隅。段の高さは上面から6.5mm下（B-B断面の寸法6.5）
 RELIEF_X, RELIEF_Y, SHOULDER = (2.9, 12.0), (4.3, 12.0), 34.0
 
-# ---------------- 溝（低い部分）一覧 ----------------
-# (中心x, 中心y, 幅x, 幅y)  ※全て z=DIP まで。壁は垂直
-DIPS = []
-ROW_RC = [-7.5 + 33.0 * k for k in range(-2, 2)]     # 長方形の窪みの行
+# ---------------- 棚（横腕・通路・スロット）と窪み ----------------
+# (中心x, 中心y, 幅x, 幅y)  壁は垂直
+SHELVES = []                                          # 底が z=SHELF の棚
+PADS = []                                             # 床から PAD_DEPTH だけ下がる長方形の窪み
+ROW_RC = [-7.5 + 33.0 * k for k in range(-2, 2)]
 for x in (-35.0, 0.0, 35.0):
     for y in ROW_RC:
-        DIPS.append((x, y, 15.4, 12.5))
-    DIPS.append((x, 72.3, PITCH - PIL_BASE, 43.0))   # 上端スロット（柱の間）
+        PADS.append((x, y, 15.4, 12.5))
+    SHELVES.append((x, 72.3, PITCH - PIL_BASE, 43.0))            # 上端スロット（柱の間）
 TAB_H = 17.0
 TAB_Y = [25.25 + 33.0 * i for i in range(-3, 2)]
 TAB_Y[0] = -73.2
-for s in (-1, 1):
-    DIPS.append((s * 70.0, 72.3, PITCH - PIL_BASE, 43.0))      # 上端スロット
-    DIPS.append((s * 70.45, -7.0, 15.5, 146.0))                # 縦通路 (y=-80〜66)
-    DIPS.append((s * 69.75, -87.5, 19.7, 15.0))                # 通路下端の縦長凹み (L字の脚)
-    for y in TAB_Y:                                            # 横腕
-        DIPS.append((s * 79.35, y, 33.3, TAB_H))
-
-# B-B断面: 上端スロット端部のランプ（壁→z≈24の5.3mm段→急な傾斜→底）
-RAMPS = [(x, 7.0, [(95.0, 40.0), (93.0, 40.0), (91.1, 24.0), (85.8, 23.2), (79.5, DIP)])
-         for x in (-70.0, -35.0, 0.0, 35.0, 70.0)]
+for s_ in (-1, 1):
+    SHELVES.append((s_ * 70.0, 72.3, PITCH - PIL_BASE, 43.0))    # 上端スロット
+    SHELVES.append((s_ * 70.45, -7.0, 15.5, 146.0))              # 縦通路 (y=-80〜66)
+    SHELVES.append((s_ * 69.75, -87.5, 19.7, 15.0))              # 通路下端の縦長凹み (L字の脚)
+    for y in TAB_Y:                                              # 横腕
+        SHELVES.append((s_ * 79.35, y, 33.3, TAB_H))
 
 
 # ---------------- 柱の一覧 ----------------
@@ -108,15 +107,13 @@ def field(d):
             .extrude(H + 1 - FL_FIELD))
 
 
-def dip(x, y, w, h, d):
-    return box(x - w / 2 - d, x + w / 2 + d, y - h / 2 - d, y + h / 2 + d, DIP - d, FL_FIELD + 1)
+def shelf(x, y, w, h, d):
+    """床の上に立つ棚（中実）。上面 z=SHELF"""
+    return box(x - w / 2 + d, x + w / 2 - d, y - h / 2 + d, y + h / 2 - d, FL_FIELD - d - 0.5, SHELF - d)
 
 
-def ramp(x, hw, pts, d):
-    y_a, y_b = pts[0][0], pts[-1][0]
-    poly = [(y_a, DIP - d - 1.0)] + [(y, z - d) for y, z in pts] + [(y_b, DIP - d - 1.0)]
-    return (cq.Workplane("YZ").workplane(offset=x - hw + d).polyline(poly).close()
-            .extrude(2 * (hw - d)))
+def pad(x, y, w, h, d):
+    return box(x - w / 2 - d, x + w / 2 + d, y - h / 2 - d, y + h / 2 + d, FL_FIELD - PAD_DEPTH - d, FL_FIELD + 1)
 
 
 def pillar(x0, x1, y0, y1, c, corners, d):
@@ -136,10 +133,10 @@ def pillar(x0, x1, y0, y1, c, corners, d):
 def solid(d):
     """d=0: 外形ソリッド、d=T: 板厚ぶん内側のソリッド（下面は開放）"""
     s = outer(d).cut(field(d))
-    for x, y, w, h in DIPS:
-        s = s.cut(dip(x, y, w, h, d))
-    for x, hw, pts in RAMPS:
-        s = s.union(ramp(x, hw, pts, d))
+    for x, y, w, h in SHELVES:
+        s = s.union(shelf(x, y, w, h, d))
+    for x, y, w, h in PADS:
+        s = s.cut(pad(x, y, w, h, d))
     for x0, x1, y0, y1, c, corners in PILLARS:
         s = s.union(pillar(x0, x1, y0, y1, c, corners, d))
     # 柱がリムの外へはみ出さないよう外形で切り取る
