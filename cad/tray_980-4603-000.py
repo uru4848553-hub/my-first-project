@@ -9,7 +9,8 @@ W0, W1 = 210.0, 202.0      # 底面外形 / 上面外形
 H = 40.5                   # 全高
 T = 0.8                    # 板厚
 R = 15.0                   # 外形コーナー R15
-FLOOR_Z = 5.0              # 凹み底面の高さ
+FL_SQ, FL_STD, FL_HALF = 6.3, 4.4, 5.0   # 底の高さ: 角形凹み / 長方形・横腕・通路・スロット / 下端の半開き凹み（A-A,B-B断面）
+FLOOR_Z = FL_STD              # 凹み底面の高さ
 DRAFT = 3.0                # 凹みの抜き勾配(deg)  ※上端18.5 → 底15 の図面値に合わせた
 WALL_DRAFT = math.degrees(math.atan(((W0 - W1) / 2) / H))
 
@@ -21,13 +22,13 @@ POCKETS = []
 # 1) クリップ付き角形凹み 4列×4行
 SQUARES = [(x, y) for x in (-52.5, -17.5, 17.5, 52.5) for y in ROW_SQ]
 for x, y in SQUARES:
-    POCKETS.append((x, y, 18.5, 18.5, 2.5))
+    POCKETS.append((x, y, 18.5, 18.5, 2.5, FL_SQ))
 # 2) 中央3列の長方形凹み（x=0,±35）
 for x in (-35.0, 0.0, 35.0):
     for y in ROW_RC:
-        POCKETS.append((x, y, 15.4, 12.5, 2.0))
+        POCKETS.append((x, y, 15.4, 12.5, 2.0, FL_STD))
     # 3) 上端の縦長スロット
-    POCKETS.append((x, 72.3, 19.0, 43.0, 2.0))
+    POCKETS.append((x, 72.3, 19.0, 43.0, 2.0, FL_STD))
 # 4) 両側の縦通路・上端スロット（x=±70）・横腕・ベイ（図面の外側の線で寸法を取る）
 TAB_H = 17.0                                               # 横腕の上端寸法（外側の線）
 TAB_Y = [25.25 + 33.0 * i for i in range(-3, 2)]            # 横腕5段の中心Y
@@ -38,20 +39,20 @@ for i in range(-3, 0):                                      # 横腕どうしの
 BAYS.append((TAB_Y[4] + TAB_H / 2, 82.6, True, False))      # 最上段の横腕より上: 下側の隅のみ
 BAYS.append((-87.0, TAB_Y[0] - TAB_H / 2, False, True))     # 最下段の横腕より下: 上側の隅のみ
 for s in (-1, 1):
-    POCKETS.append((s * 70.0, 68.8, 19.4, 50.0, 2.5))       # 上端スロット
-    POCKETS.append((s * 70.45, -7.0, 15.5, 146.0, 2.0))     # 縦通路（y=-80〜66）
-    POCKETS.append((s * 69.75, -87.5, 19.7, 15.0, 2.5))     # 通路下端の縦長凹み（L字の脚。y=-95〜-80）
+    POCKETS.append((s * 70.0, 68.8, 19.4, 50.0, 2.5, FL_STD))       # 上端スロット
+    POCKETS.append((s * 70.45, -7.0, 15.5, 146.0, 2.0, FL_STD))     # 縦通路（y=-80〜66）
+    POCKETS.append((s * 69.75, -87.5, 19.7, 15.0, 2.5, FL_STD))     # 通路下端の縦長凹み（L字の脚。y=-95〜-80）
     for y in TAB_Y:                                         # 横腕
-        POCKETS.append((s * 79.35, y, 33.3, TAB_H, 2.5))
+        POCKETS.append((s * 79.35, y, 33.3, TAB_H, 2.5, FL_STD))
     for ylo, yhi, _, _ in BAYS:                             # ベイ（通路から外側へ広がる凹み）
-        POCKETS.append((s * 81.0, (ylo + yhi) / 2, 8.6, yhi - ylo, 2.0))
+        POCKETS.append((s * 81.0, (ylo + yhi) / 2, 8.6, yhi - ylo, 2.0, FL_STD))
 # 5) 下端の半開きクリップ凹み
 for x in (-52.5, -17.5, 17.5, 52.5):
-    POCKETS.append((x, -87.0, 16.0, 13.0, 2.0))
+    POCKETS.append((x, -87.0, 16.0, 13.0, 2.0, FL_HALF))
 
 # クリップ（L字フック）: 図面の拡大図より。凹みの上縁の隅から内側へ張り出すつば状ブロック。
-# 凹み中心から見て |x| 2.6〜7.95、|y| 4.3〜8.1（上面図）、z は上面から6.5mm下(34.0。B-B断面の寸法6.5)〜上面。
-HOOK_X, HOOK_Y, HOOK_BOT = (2.6, 9.6), (4.3, 9.6), 34.0   # 壁側は凹みの縁より外まで伸ばして壁と一体にする
+# 凹み中心から見て |x| 2.9〜7.6、|y| 4.3〜8.1（上面図）、z は上面から6.5mm下(34.0。B-B断面の寸法6.5)〜上面。
+HOOK_X, HOOK_Y, HOOK_BOT = (2.9, 9.6), (4.3, 9.6), 34.0   # 壁側は凹みの縁より外まで伸ばして壁と一体にする
 HOOKS = []   # (x0, x1, y0, y1) 絶対座標の箱
 def _box(cx, cy, sx, sy):
     xs = sorted((cx + sx * HOOK_X[0], cx + sx * HOOK_X[1]))
@@ -102,8 +103,8 @@ def body(d):
     s = (cq.Workplane("XY").workplane(offset=-1 if d else 0)
          .sketch().rect(W0 - 2 * d, W0 - 2 * d).vertices().fillet(R - d).finalize()
          .extrude(top + (1 if d else 0), taper=WALL_DRAFT))
-    for x, y, w, h, r in POCKETS:
-        depth = top + 0.01 - (FLOOR_Z - d)
+    for x, y, w, h, r, fz in POCKETS:
+        depth = top + 0.01 - (fz - d)
         pocket = (cq.Workplane("XY").workplane(offset=top + 0.01).center(x, y)
                   .sketch().rect(w + 2 * d, h + 2 * d).vertices().fillet(max(r - 0.01, 0.1) + d).finalize()
                   .extrude(-depth, taper=DRAFT))
