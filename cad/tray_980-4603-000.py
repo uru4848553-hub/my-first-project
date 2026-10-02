@@ -38,9 +38,25 @@ for s in (-1, 1):
 for x in (-52.5, -17.5, 17.5, 52.5):
     POCKETS.append((x, -87.0, 16.0, 13.0, 2.0))
 
-# クリップ(コーナーの突起): 角形凹みの内側4隅に立てる小柱
-POST, POST_TOP = 3.5, 36.0
-POSTS = [(x + sx * 5.9, y + sy * 5.9) for x, y in SQUARES for sx in (-1, 1) for sy in (-1, 1)]
+# クリップ（L字フック）: 図面の拡大図より。凹みの上縁の隅から内側へ張り出すつば状ブロック。
+# 凹み中心から見て |x| 2.6〜7.95、|y| 4.3〜8.1（上面図）、z は上面から約6.3mm下(34.2)〜上面。
+HOOK_X, HOOK_Y, HOOK_BOT = (2.6, 9.6), (4.3, 9.6), 34.2   # 壁側は凹みの縁より外まで伸ばして壁と一体にする
+HOOKS = []   # (中心x, 中心y, sx, sy)
+for x, y in SQUARES:
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            HOOKS.append((x, y, sx, sy))
+for x in (-52.5, -17.5, 17.5, 52.5):          # 下端の半開き凹みは図の上側(凹みの+Y側)の2隅のみ
+    for sx in (-1, 1):
+        HOOKS.append((x, -75.7, sx, -1))      # y=-85.3〜-80.0 に置く
+
+
+def hook(x, y, sx, sy):
+    x0, x1 = sorted((x + sx * HOOK_X[0], x + sx * HOOK_X[1]))
+    y0, y1 = sorted((y + sy * HOOK_Y[0], y + sy * HOOK_Y[1]))
+    return (cq.Workplane("XY").workplane(offset=HOOK_BOT)
+            .center((x0 + x1) / 2, (y0 + y1) / 2).sketch().rect(x1 - x0, y1 - y0)
+            .vertices().fillet(1.0).finalize().extrude(H - HOOK_BOT))
 
 
 # B-B断面のランプ（傾斜底）: 上端スロット(Y+側)と下端の半開き凹み(Y-側)
@@ -74,11 +90,9 @@ def body(d):
         s = s.cut(pocket)
     for x, hw, pts in RAMPS:
         s = s.union(ramp(x, hw, pts, d))
-    p = POST - 2 * d
-    for x, y in POSTS:
-        post = (cq.Workplane("XY").workplane(offset=FLOOR_Z - d - 0.5)
-                .center(x, y).rect(p, p).extrude(POST_TOP - d - FLOOR_Z + d + 0.5))
-        s = s.union(post)
+    if d == 0:                         # フックは中実のブロックとして外形側にだけ足す
+        for x, y, sx, sy in HOOKS:
+            s = s.union(hook(x, y, sx, sy))
     return s
 
 
