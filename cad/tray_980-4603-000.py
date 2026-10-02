@@ -31,14 +31,16 @@ for x in (-35.0, 0.0, 35.0):
 # 4) 両側の縦通路・上端スロット（x=±70）・横腕・ベイ（図面の外側の線で寸法を取る）
 TAB_H = 17.0                                               # 横腕の上端寸法（外側の線）
 TAB_Y = [25.25 + 33.0 * i for i in range(-3, 2)]            # 横腕5段の中心Y
+TAB_Y[0] = -73.2                                            # 最下段のみ図面で約0.5mm上
 BAYS = []                                                   # ベイ: (yLo, yHi, 下側フックあり, 上側フックあり)
 for i in range(-3, 0):                                      # 横腕どうしの間の4か所
     BAYS.append((TAB_Y[i + 3] + TAB_H / 2, TAB_Y[i + 4] - TAB_H / 2, True, True))
 BAYS.append((TAB_Y[4] + TAB_H / 2, 82.6, True, False))      # 最上段の横腕より上: 下側の隅のみ
-BAYS.append((-93.5, TAB_Y[0] - TAB_H / 2, False, True))     # 最下段の横腕より下: 上側の隅のみ
+BAYS.append((-87.0, TAB_Y[0] - TAB_H / 2, False, True))     # 最下段の横腕より下: 上側の隅のみ
 for s in (-1, 1):
     POCKETS.append((s * 70.0, 70.0, 19.4, 51.0, 2.5))       # 上端スロット
-    POCKETS.append((s * 70.45, -11.0, 15.5, 154.0, 2.0))    # 縦通路
+    POCKETS.append((s * 70.45, -7.0, 15.5, 146.0, 2.0))     # 縦通路（y=-80〜66）
+    POCKETS.append((s * 69.75, -87.5, 19.7, 15.0, 2.5))     # 通路下端の縦長凹み（L字の脚。y=-95〜-80）
     for y in TAB_Y:                                         # 横腕
         POCKETS.append((s * 79.35, y, 33.3, TAB_H, 2.5))
     for ylo, yhi, _, _ in BAYS:                             # ベイ（通路から外側へ広がる凹み）
