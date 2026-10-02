@@ -43,6 +43,23 @@ POST, POST_TOP = 3.5, 36.0
 POSTS = [(x + sx * 5.9, y + sy * 5.9) for x, y in SQUARES for sx in (-1, 1) for sy in (-1, 1)]
 
 
+# B-B断面のランプ（傾斜底）: 上端スロット(Y+側)と下端の半開き凹み(Y-側)
+# 各要素: (中心x, 半幅x, [(y, z), ...] ランプ上面の折れ線。最後の点が底面)
+RAMPS = []
+for x, w in ((-70.0, 19.4), (-35.0, 19.0), (0.0, 19.0), (35.0, 19.0), (70.0, 19.4)):
+    RAMPS.append((x, w / 2 - 2.0, [(96.5, 38.0), (92.0, 24.0), (82.0, FLOOR_Z)]))
+for x in (-52.5, -17.5, 17.5, 52.5):
+    RAMPS.append((x, 6.5, [(-94.0, 36.0), (-80.5, FLOOR_Z)]))
+
+
+def ramp(x, hw, pts, d):
+    """ランプ下の材料ブロック（YZ断面を押し出し）。d=板厚オフセット(上面を垂直に下げる)"""
+    y_a, y_b = pts[0][0], pts[-1][0]
+    poly = [(y_a, FLOOR_Z - d - 1.0)] + [(y, z - d) for y, z in pts] + [(y_b, FLOOR_Z - d - 1.0)]
+    return (cq.Workplane("YZ").workplane(offset=x - hw + d).polyline(poly).close()
+            .extrude(2 * (hw - d)))
+
+
 def body(d):
     """d=0: 外形ソリッド、d=T: 板厚ぶん内側のソリッド（下面は開放）"""
     top = H - d
@@ -55,6 +72,8 @@ def body(d):
                   .sketch().rect(w + 2 * d, h + 2 * d).vertices().fillet(max(r - 0.01, 0.1) + d).finalize()
                   .extrude(-depth, taper=DRAFT))
         s = s.cut(pocket)
+    for x, hw, pts in RAMPS:
+        s = s.union(ramp(x, hw, pts, d))
     p = POST - 2 * d
     for x, y in POSTS:
         post = (cq.Workplane("XY").workplane(offset=FLOOR_Z - d - 0.5)
