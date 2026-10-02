@@ -1,124 +1,153 @@
-"""ITT Cannon 980-4603-000 XLM梱包トレー 3Dモデル（図面の上面図から凹み形状を読み取った近似）。
+"""ITT Cannon 980-4603-000 XLM梱包トレー 3Dモデル（図面＋実物写真から読み取った近似）。
 実行: python tray_980-4603-000.py  → 980-4603-000.step を出力
-座標: 原点=トレー中心、X右、Y上（図面の上面図と同じ向き）、Z=0がフランジ面、Z=40.5が上面ランド。
+座標: 原点=トレー中心、X右、Y上（図面の上面図と同じ向き）、Z=0がフランジ面、Z=40.5が上面。
+
+形状の構造（実物写真・A-A/B-B断面より）
+  * 外周リム: 上面(z=40.5)の帯。外形は 210(底)→202(上) の抜き勾配つき R15。
+  * 内側は低い「床」(z=FL_FIELD)。凹みではなく、床から柱が立っている。
+  * 柱: 台形の柱(底18.5→上15.9)。上端6.5mmは十字形（四隅を段落ち＝クリップ/L字フック）。
+        内側4列×4行=16本。上端・下端・左右の外周にも同じ柱が並び、リムとつながる。
+  * 溝(低い部分 z=DIP): 長方形の窪み、上端スロット、左右の縦通路と横腕、下端の縦長凹み。
 """
 import math
 import cadquery as cq
 
-W0, W1 = 210.0, 202.0      # 底面外形 / 上面外形
-H = 40.5                   # 全高
-T = 0.8                    # 板厚
-R = 15.0                   # 外形コーナー R15
-FL_SQ, FL_STD, FL_HALF = 6.3, 4.4, 5.0   # 底の高さ: 角形凹み / 長方形・横腕・通路・スロット / 下端の半開き凹み（A-A,B-B断面）
-FLOOR_Z = FL_STD              # 凹み底面の高さ
-DRAFT = 3.0                # 凹みの抜き勾配(deg)  ※上端18.5 → 底15 の図面値に合わせた
+# ---------------- 寸法 ----------------
+W0, W1 = 210.0, 202.0          # 底面外形 / 上面外形
+H = 40.5                       # 全高
+T = 0.8                        # 板厚
+R = 15.0                       # 外形コーナー R15
+FL_FIELD = 6.3                 # 床(柱の根元)の高さ  (A-A断面)
+DIP = 4.0                      # 溝の底の高さ        (A-A/B-B断面)
 WALL_DRAFT = math.degrees(math.atan(((W0 - W1) / 2) / H))
 
-ROW_SQ = [8.3 + 33.0 * k for k in range(-2, 2)]      # 角形(クリップ付き)凹みの行 Y
-ROW_RC = [-7.5 + 33.0 * k for k in range(-2, 2)]     # 長方形凹み・横腕の行 Y
+PITCH = 35.0
+PIL_X = [-52.5, -17.5, 17.5, 52.5]                  # 内側の柱の列
+PIL_Y = {k: 8.3 + 33.0 * k for k in range(-3, 3)}   # 柱の行 k=-3(下端)..2(上端)
+PIL_BASE, PIL_TOP = 18.5, 15.9                      # 柱の底/上端の幅
+PIL_TAPER = math.degrees(math.atan(((PIL_BASE - PIL_TOP) / 2) / (H - FL_FIELD)))
+SIDE_X = 87.5                                       # 左右の外周の柱の列
 
-# 凹み一覧: (中心x, 中心y, 幅x, 幅y, コーナーR)   ※上端寸法
-POCKETS = []
-# 1) クリップ付き角形凹み 4列×4行
-SQUARES = [(x, y) for x in (-52.5, -17.5, 17.5, 52.5) for y in ROW_SQ]
-for x, y in SQUARES:
-    POCKETS.append((x, y, 18.5, 18.5, 2.5, FL_SQ))
-# 2) 中央3列の長方形凹み（x=0,±35）
+# 床の範囲（リムの内側）。上面の図面の外側の線
+FIELD = dict(x0=-96.0, x1=96.0, y0=-95.0, y1=93.8, r=8.0)
+
+# クリップ（上端6.5mmの十字形の四隅を段落ちにする）
+# 柱の中心から |x| 2.9〜、|y| 4.3〜 の四隅。段の高さは上面から6.5mm下（B-B断面の寸法6.5）
+RELIEF_X, RELIEF_Y, SHOULDER = (2.9, 12.0), (4.3, 12.0), 34.0
+
+# ---------------- 溝（低い部分）一覧 ----------------
+# (中心x, 中心y, 幅x, 幅y)  ※全て z=DIP まで。壁は垂直
+DIPS = []
+ROW_RC = [-7.5 + 33.0 * k for k in range(-2, 2)]     # 長方形の窪みの行
 for x in (-35.0, 0.0, 35.0):
     for y in ROW_RC:
-        POCKETS.append((x, y, 15.4, 12.5, 2.0, FL_STD))
-    # 3) 上端の縦長スロット
-    POCKETS.append((x, 72.3, 19.0, 43.0, 2.0, FL_STD))
-# 4) 両側の縦通路・上端スロット（x=±70）・横腕・ベイ（図面の外側の線で寸法を取る）
-TAB_H = 17.0                                               # 横腕の上端寸法（外側の線）
-TAB_Y = [25.25 + 33.0 * i for i in range(-3, 2)]            # 横腕5段の中心Y
-TAB_Y[0] = -73.2                                            # 最下段のみ図面で約0.5mm上
-BAYS = []                                                   # ベイ: (yLo, yHi, 下側フックあり, 上側フックあり)
-for i in range(-3, 0):                                      # 横腕どうしの間の4か所
-    BAYS.append((TAB_Y[i + 3] + TAB_H / 2, TAB_Y[i + 4] - TAB_H / 2, True, True))
-BAYS.append((TAB_Y[4] + TAB_H / 2, 82.6, True, False))      # 最上段の横腕より上: 下側の隅のみ
-BAYS.append((-87.0, TAB_Y[0] - TAB_H / 2, False, True))     # 最下段の横腕より下: 上側の隅のみ
+        DIPS.append((x, y, 15.4, 12.5))
+    DIPS.append((x, 72.3, PITCH - PIL_BASE, 43.0))   # 上端スロット（柱の間）
+TAB_H = 17.0
+TAB_Y = [25.25 + 33.0 * i for i in range(-3, 2)]
+TAB_Y[0] = -73.2
 for s in (-1, 1):
-    POCKETS.append((s * 70.0, 68.8, 19.4, 50.0, 2.5, FL_STD))       # 上端スロット
-    POCKETS.append((s * 70.45, -7.0, 15.5, 146.0, 2.0, FL_STD))     # 縦通路（y=-80〜66）
-    POCKETS.append((s * 69.75, -87.5, 19.7, 15.0, 2.5, FL_STD))     # 通路下端の縦長凹み（L字の脚。y=-95〜-80）
-    for y in TAB_Y:                                         # 横腕
-        POCKETS.append((s * 79.35, y, 33.3, TAB_H, 2.5, FL_STD))
-    for ylo, yhi, _, _ in BAYS:                             # ベイ（通路から外側へ広がる凹み）
-        POCKETS.append((s * 81.0, (ylo + yhi) / 2, 8.6, yhi - ylo, 2.0, FL_STD))
-# 5) 下端の半開きクリップ凹み
-for x in (-52.5, -17.5, 17.5, 52.5):
-    POCKETS.append((x, -87.0, 16.0, 13.0, 2.0, FL_HALF))
+    DIPS.append((s * 70.0, 72.3, PITCH - PIL_BASE, 43.0))      # 上端スロット
+    DIPS.append((s * 70.45, -7.0, 15.5, 146.0))                # 縦通路 (y=-80〜66)
+    DIPS.append((s * 69.75, -87.5, 19.7, 15.0))                # 通路下端の縦長凹み (L字の脚)
+    for y in TAB_Y:                                            # 横腕
+        DIPS.append((s * 79.35, y, 33.3, TAB_H))
 
-# クリップ（L字フック）: 図面の拡大図より。凹みの上縁の隅から内側へ張り出すつば状ブロック。
-# 凹み中心から見て |x| 2.9〜7.6、|y| 4.3〜8.1（上面図）、z は上面から6.5mm下(34.0。B-B断面の寸法6.5)〜上面。
-HOOK_X, HOOK_Y, HOOK_BOT = (2.9, 9.6), (4.3, 9.6), 34.0   # 壁側は凹みの縁より外まで伸ばして壁と一体にする
-HOOKS = []   # (x0, x1, y0, y1) 絶対座標の箱
-def _box(cx, cy, sx, sy):
-    xs = sorted((cx + sx * HOOK_X[0], cx + sx * HOOK_X[1]))
-    ys = sorted((cy + sy * HOOK_Y[0], cy + sy * HOOK_Y[1]))
-    return (xs[0], xs[1], ys[0], ys[1])
-for x, y in SQUARES:
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            HOOKS.append(_box(x, y, sx, sy))
-for x in (-52.5, -17.5, 17.5, 52.5):          # 下端の半開き凹みは図の上側(凹みの+Y側)の2隅のみ
-    for sx in (-1, 1):
-        HOOKS.append(_box(x, -75.7, sx, -1))  # y=-85.3〜-80.0 に置く
-# ベイのフック: 外側(壁側)の x=79.8〜86、横腕の縁から約3.6mm
-for s in (-1, 1):
-    for ylo, yhi, low, up in BAYS:
-        xa, xb = sorted((s * 79.8, s * 86.0))
-        if low:
-            HOOKS.append((xa, xb, ylo, ylo + 3.6))
-        if up:
-            HOOKS.append((xa, xb, yhi - 3.6, yhi))
+# B-B断面: 上端スロット端部のランプ（壁→z≈24の5.3mm段→急な傾斜→底）
+RAMPS = [(x, 7.0, [(95.0, 40.0), (93.0, 40.0), (91.1, 24.0), (85.8, 23.2), (79.5, DIP)])
+         for x in (-70.0, -35.0, 0.0, 35.0, 70.0)]
 
 
-def hook(x0, x1, y0, y1):
-    return (cq.Workplane("XY").workplane(offset=HOOK_BOT)
-            .center((x0 + x1) / 2, (y0 + y1) / 2).sketch().rect(x1 - x0, y1 - y0)
-            .vertices().fillet(1.0).finalize().extrude(H - HOOK_BOT))
+# ---------------- 柱の一覧 ----------------
+# (x0, x1, y0, y1, 段落ちにする隅[(sx, sy)...])  x0..y1 は底の範囲。リム側はリムの中まで伸ばす。
+PILLARS = []
+for k in range(-3, 3):
+    yc = PIL_Y[k]
+    ya, yb = yc - PIL_BASE / 2, yc + PIL_BASE / 2
+    if k == 2:
+        yb = 99.0                       # 上端: リムにつながる
+    if k == -3:
+        ya = -99.0                      # 下端: リムにつながる
+    for x in PIL_X:
+        if k == 2:
+            corners = [(-1, -1), (1, -1)]
+        elif k == -3:
+            corners = [(-1, 1), (1, 1)]
+        else:
+            corners = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+        PILLARS.append((x - PIL_BASE / 2, x + PIL_BASE / 2, ya, yb, (x, yc), corners))
+    for s in (-1, 1):                   # 左右の外周の柱（外側はリムにつながる）
+        xa, xb = sorted((s * (SIDE_X - PIL_BASE / 2), s * 99.0))
+        if k == 2:
+            corners = [(-s, -1)]
+        elif k == -3:
+            corners = [(-s, 1)]
+        else:
+            corners = [(-s, -1), (-s, 1)]
+        PILLARS.append((xa, xb, ya, yb, (s * SIDE_X, yc), corners))
 
 
-# B-B断面のランプ: 上端スロット（Y+側）の端部。端の壁→z≈24の5.3mm幅の段→急な傾斜→底、の順。
-# 各要素: (中心x, 半幅x, [(y, z), ...] ランプ上面の折れ線。最後の点が底面)
-# ※下端の半開き凹みは傾斜ではなく通常の抜き勾配の壁（B-B断面の拡大図より）なのでランプなし
-RAMPS = []
-for x, w in ((-70.0, 19.4), (-35.0, 19.0), (0.0, 19.0), (35.0, 19.0), (70.0, 19.4)):
-    RAMPS.append((x, w / 2 - 2.0, [(95.0, 40.0), (93.0, 40.0), (91.1, 24.0), (85.8, 23.2), (79.5, FLOOR_Z)]))
+def box(x0, x1, y0, y1, z0, z1):
+    return (cq.Workplane("XY").workplane(offset=z0).center((x0 + x1) / 2, (y0 + y1) / 2)
+            .rect(x1 - x0, y1 - y0).extrude(z1 - z0))
+
+
+def outer(d):
+    top = H - d
+    return (cq.Workplane("XY").workplane(offset=-1 if d else 0)
+            .sketch().rect(W0 - 2 * d, W0 - 2 * d).vertices().fillet(R - d).finalize()
+            .extrude(top + (1 if d else 0), taper=WALL_DRAFT))
+
+
+def field(d):
+    f = FIELD
+    w, h = f["x1"] - f["x0"] + 2 * d, f["y1"] - f["y0"] + 2 * d
+    cx, cy = (f["x0"] + f["x1"]) / 2, (f["y0"] + f["y1"]) / 2
+    return (cq.Workplane("XY").workplane(offset=FL_FIELD - d).center(cx, cy)
+            .sketch().rect(w, h).vertices().fillet(f["r"] + d).finalize()
+            .extrude(H + 1 - FL_FIELD))
+
+
+def dip(x, y, w, h, d):
+    return box(x - w / 2 - d, x + w / 2 + d, y - h / 2 - d, y + h / 2 + d, DIP - d, FL_FIELD + 1)
 
 
 def ramp(x, hw, pts, d):
-    """ランプ下の材料ブロック（YZ断面を押し出し）。d=板厚オフセット(上面を垂直に下げる)"""
     y_a, y_b = pts[0][0], pts[-1][0]
-    poly = [(y_a, FLOOR_Z - d - 1.0)] + [(y, z - d) for y, z in pts] + [(y_b, FLOOR_Z - d - 1.0)]
+    poly = [(y_a, DIP - d - 1.0)] + [(y, z - d) for y, z in pts] + [(y_b, DIP - d - 1.0)]
     return (cq.Workplane("YZ").workplane(offset=x - hw + d).polyline(poly).close()
             .extrude(2 * (hw - d)))
 
 
-def body(d):
+def pillar(x0, x1, y0, y1, c, corners, d):
+    """台形の柱。上端は十字形（四隅を z=SHOULDER まで落とす）。d=板厚オフセット"""
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    z0 = FL_FIELD - d - 0.5
+    body = (cq.Workplane("XY").workplane(offset=z0).center(cx, cy)
+            .sketch().rect(x1 - x0 - 2 * d, y1 - y0 - 2 * d).vertices().fillet(2.5).finalize()
+            .extrude(H - d - z0, taper=PIL_TAPER))
+    for sx, sy in corners:
+        xa, xb = sorted((c[0] + sx * (RELIEF_X[0] - d), c[0] + sx * RELIEF_X[1]))
+        ya, yb = sorted((c[1] + sy * (RELIEF_Y[0] - d), c[1] + sy * RELIEF_Y[1]))
+        body = body.cut(box(xa, xb, ya, yb, SHOULDER - d, H + 1))
+    return body
+
+
+def solid(d):
     """d=0: 外形ソリッド、d=T: 板厚ぶん内側のソリッド（下面は開放）"""
-    top = H - d
-    s = (cq.Workplane("XY").workplane(offset=-1 if d else 0)
-         .sketch().rect(W0 - 2 * d, W0 - 2 * d).vertices().fillet(R - d).finalize()
-         .extrude(top + (1 if d else 0), taper=WALL_DRAFT))
-    for x, y, w, h, r, fz in POCKETS:
-        depth = top + 0.01 - (fz - d)
-        pocket = (cq.Workplane("XY").workplane(offset=top + 0.01).center(x, y)
-                  .sketch().rect(w + 2 * d, h + 2 * d).vertices().fillet(max(r - 0.01, 0.1) + d).finalize()
-                  .extrude(-depth, taper=DRAFT))
-        s = s.cut(pocket)
+    s = outer(d).cut(field(d))
+    for x, y, w, h in DIPS:
+        s = s.cut(dip(x, y, w, h, d))
     for x, hw, pts in RAMPS:
         s = s.union(ramp(x, hw, pts, d))
-    if d == 0:                         # フックは中実のブロックとして外形側にだけ足す
-        for box in HOOKS:
-            s = s.union(hook(*box))
-    return s
+    for x0, x1, y0, y1, c, corners in PILLARS:
+        s = s.union(pillar(x0, x1, y0, y1, c, corners, d))
+    # 柱がリムの外へはみ出さないよう外形で切り取る
+    return s.intersect(outer(d))
 
 
 if __name__ == "__main__":
-    tray = body(0).cut(body(T))
+    tray = solid(0).cut(solid(T))
     cq.exporters.export(tray, "980-4603-000.step")
     bb = tray.val().BoundingBox()
     print("valid:", tray.val().isValid(), "solids:", tray.solids().size())
