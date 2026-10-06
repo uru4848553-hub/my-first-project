@@ -1,11 +1,12 @@
 """ITT Cannon 980-4603-000 XLM梱包トレー 3Dモデル（図面＋実物写真から読み取った近似）。
-実行: python tray_980-4603-000.py  → 980-4603-000.step を出力
+実行: python tray_980-4603-000.py          → 980-4603-000.step（ソリッド＝中身の詰まった形状）を出力
+      python tray_980-4603-000.py --shell  → 板厚0.8の薄板（中空）版を出力
 座標: 原点=トレー中心、X右、Y上（図面の上面図と同じ向き）、Z=0がフランジ面、Z=40.5が上面。
 
 形状の構造（実物写真・A-A/B-B断面より）
-  * 外周リム: 中空のテント形。外壁は根元207→上面202、内壁は上面192→床182。上面の帯の幅は5。
+  * 外周リム: 外壁は根元207→上面202、内壁は上面192→床182。上面の帯の幅は5。（--shell では中空のテント形）
     根元に幅1.5・厚さ0.8の縁(つば)が出て、その外形が 210 (4-R15)。
-  * 内側は低い「床」。床は3段（フランジ面からの下面の高さ）: 4（一番低い: 長方形の窪み・スロット・横腕）、
+  * 内側は低い「床」。床は3段（フランジ面から床の上面までの高さ）: 4（一番低い: 長方形の窪み・スロット・横腕）、
     6（〇: 柱の横のすき間、+2）、8（×: 柱の縦のすき間、+4）。B-B の補助線 z=4,6,8 と寸法 2,4,4。
   * 柱: 台形の柱(底19.5×20→段で15.5×16)。上端6.5mmは十字形（腕 6.5 と 10、四隅を段落ち＝クリップ/L字フック）。
         内側4列×4行=16本。上端・下端・左右の外周にも同じ柱が並び、リムとつながる。
@@ -22,10 +23,10 @@ H = 40.5                       # 全高
 T = 0.8                        # 板厚
 R = 15.0                       # 縁の外形コーナー 4-R15
 R_BASE = R - (LIP_W - W0) / 2   # 壁の根元のコーナーR（縁と同心）
-# 床の高さ（フランジ面からの板の下面 4 / 6 / 8。B-B の補助線と寸法 2, 4, 4。上面は板厚0.8を足す）
-FLOOR = 4.0 + 0.8              # 一番低い床（印のない場所: 長方形の窪み・スロット・横腕・縦通路下端・リムの足元）
-LEVEL_O = 6.0 + 0.8            # 〇: 柱の横のすき間（床+2）
-LEVEL_X = 8.0 + 0.8            # ×: 柱の縦のすき間（床+4）
+# 床の高さ（フランジ面から床の上面まで。B-B の補助線と寸法 2, 4, 4）
+FLOOR = 4.0                    # 一番低い床（印のない場所: 長方形の窪み・スロット・横腕・縦通路下端・リムの足元）
+LEVEL_O = 6.0                  # 〇: 柱の横のすき間（床+2）
+LEVEL_X = 8.0                  # ×: 柱の縦のすき間（床+4）
 FL_FIELD = FLOOR
 PIL_REF_Z = LEVEL_O            # 柱の底幅(19.5)はこの高さでの寸法（A-A）
 WALL_DRAFT = math.degrees(math.atan(((W0 - W1) / 2) / H))
@@ -45,7 +46,7 @@ PIL_TAPER = math.degrees(math.atan(2.0 / (SHOULDER - PIL_REF_Z)))   # 底→段�
 
 # 床の範囲（リムの内側）。上面の図面の外側の線
 FIELD = dict(x0=-96.0, x1=96.0, y0=-96.0, y1=96.0, r=8.0)   # 上面(z=40.5)での内側の縁。5+192+5
-FIELD_TAPER = math.degrees(math.atan(((TOP_IN_W - FLOOR_W) / 2) / (H - 3.8)))   # 内壁の傾き(≈7.8°)
+FIELD_TAPER = math.degrees(math.atan(((TOP_IN_W - FLOOR_W) / 2) / (H - FLOOR)))   # 内壁の傾き(≈7.8°)
 
 # クリップ（上端6.5mmの十字形の四隅を段落ちにする）
 # 柱の中心から |x|>=3.25（腕6.5）、|y|>=5（腕10）の四隅。段の高さは上面から6.5mm下
@@ -125,8 +126,13 @@ def field(d):
             .extrude(-(H + 0.01 - (FL_FIELD - d)), taper=FIELD_TAPER))
 
 
+def lip_solid():
+    """底の縁(つば)をソリッドで: 外形210(R15)、厚さ0.8の板（壁の根元207の下も埋まる）"""
+    return cq.Workplane("XY").sketch().rect(LIP_W, LIP_W).vertices().fillet(R).finalize().extrude(T)
+
+
 def lip():
-    """底の縁(つば): 外形210(R15)、壁の外側から出る幅1.5・厚さ0.8"""
+    """（薄板版）底の縁(つば): 外形210(R15)、壁の外側から出る幅1.5・厚さ0.8"""
     outer_ = (cq.Workplane("XY").sketch().rect(LIP_W, LIP_W).vertices().fillet(R).finalize().extrude(T))
     inner_ = (cq.Workplane("XY").workplane(offset=-1).sketch().rect(W0 - 2 * T, W0 - 2 * T)
               .vertices().fillet(R_BASE - T).finalize().extrude(T + 2))
@@ -175,8 +181,14 @@ def solid(d):
 
 
 if __name__ == "__main__":
-    tray = solid(0).cut(solid(T)).union(lip())
-    cq.exporters.export(tray, "980-4603-000.step")
+    import sys
+    if "--shell" in sys.argv:
+        tray = solid(0).cut(solid(T)).union(lip())
+        out = "980-4603-000_shell.step"
+    else:
+        tray = solid(0).union(lip_solid())
+        out = "980-4603-000.step"
+    cq.exporters.export(tray, out)
     bb = tray.val().BoundingBox()
-    print("valid:", tray.val().isValid(), "solids:", tray.solids().size())
+    print(out, "valid:", tray.val().isValid(), "solids:", tray.solids().size())
     print("bbox: %.1f x %.1f x %.1f" % (bb.xlen, bb.ylen, bb.zlen), "volume mm3: %.0f" % tray.val().Volume())
