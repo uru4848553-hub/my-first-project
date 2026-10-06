@@ -8,7 +8,8 @@
   * 内側は低い「床」(z=FL_FIELD)。凹みではなく、床から柱が立っている。
   * 柱: 台形の柱(底19.5×20→段で15.5×16)。上端6.5mmは十字形（腕 6.5 と 10、四隅を段落ち＝クリップ/L字フック）。
         内側4列×4行=16本。上端・下端・左右の外周にも同じ柱が並び、リムとつながる。
-  * 溝(底 z=DIP): 上端スロット、左右の縦通路と横腕、下端の縦長凹み、長方形の窪み。床より約2.3mm低い。
+  * 溝(底 z=DIP): 上端スロット、左右の横腕(通路の幅を含む x=62.25〜91)、下端の縦長凹み、長方形の窪み。床より約2.3mm低い。
+    縦通路そのものは床と同じ高さ。
     上端スロットの端だけ、B-B 断面のとおり 段(幅5, z=23.4) と 傾斜(長さ約10) がある。
 """
 import math
@@ -49,21 +50,23 @@ RELIEF_X, RELIEF_Y = (ARM_X / 2, 12.0), (ARM_Y / 2, 12.0)   # 逃がし: |x|>=3.
 
 # ---------------- 溝（床より低い部分）----------------
 # (中心x, 中心y, 幅x, 幅y)  壁は垂直。リム側は床の縁(±91)まで。
-DIPS = []
+DIPS = []                                             # 壁が垂直な溝（スロット・通路下端）
+DIPS_Y = []                                           # Y方向の壁が斜めな溝: 上端17 → 底12.6（長方形の窪み・横腕）
+PAD_TOP, PAD_FLOOR = 17.0, 12.6                       # B-B: 上端の幅17 / 底(上面図の内側の線)12.6
 ROW_RC = [-8.3 + 33.0 * k for k in range(-2, 2)]      # B-B: C線から8.3、ピッチ33
 SLOT_Y0, SLOT_Y1 = 50.8, 91.0                         # 上端スロット（y=91 が床の縁）
 for x in (-35.0, 0.0, 35.0):
     for y in ROW_RC:
-        DIPS.append((x, y, 15.4, 12.5))                                   # 長方形の窪み
+        DIPS_Y.append((x, y, PITCH - PIL_BASE, PAD_TOP))                  # 長方形の窪み（X幅は柱の隙間15.5）
     DIPS.append((x, (SLOT_Y0 + SLOT_Y1) / 2, PITCH - PIL_BASE, SLOT_Y1 - SLOT_Y0))   # 上端スロット（柱の間 15.5）
 TAB_H = 17.0
 TAB_Y = [-8.3 + 33.0 * i for i in range(-2, 3)]                 # 上端から43.3、下端から26.8 の線 (B-B)
 for s_ in (-1, 1):
     DIPS.append((s_ * 70.0, (SLOT_Y0 + SLOT_Y1) / 2, PITCH - PIL_BASE, SLOT_Y1 - SLOT_Y0))   # 上端スロット
-    DIPS.append((s_ * 70.0, -7.0, 15.5, 146.0))                   # 縦通路 15.5 (x=62.25〜77.75, y=-80〜66)
+    # 縦通路(x=62.25〜77.75)は床と同じ高さの平らな帯。溝ではない（A-A: 通路の床は柱の根元と同じ高さ）
     DIPS.append((s_ * 70.0, -85.5, 15.5, 11.0))                   # 通路下端の縦長凹み (L字の脚。y=-91〜-80)
-    for y in TAB_Y:                                               # 横腕: 通路の外側 77.75 から床の縁 91 まで(13.3)＋通路
-        DIPS.append((s_ * 76.625, y, 28.75, TAB_H))
+    for y in TAB_Y:                                               # 横腕: 通路の幅(15.5)＋13.3 = x=62.25〜91 が一段低い（右の縁 x=77.75 に段）
+        DIPS_Y.append((s_ * 76.625, y, 28.75, PAD_TOP))
 
 # B-B断面: 上端スロット端部（拡大図より）
 #   リム内壁(上面96→z=23.7で93.7) → 長さ5.2の平らな段(z=23.5) → 傾斜(長さ7、高さ約20) → 底(DIP)
@@ -135,6 +138,17 @@ def dip(x, y, w, h, d):
     return box(x - w / 2 - d, x + w / 2 + d, y - h / 2 - d, y + h / 2 + d, DIP - d, FL_FIELD + 1)
 
 
+def dip_y(x, y, w, h, d):
+    """Y方向の壁が斜めな溝。上端(z=FL_FIELD)で幅h、底(z=DIP)で幅 PAD_FLOOR"""
+    h1 = h / 2 + d
+    h0 = h1 - (PAD_TOP - PAD_FLOOR) / 2
+    slope = (h1 - h0) / (FL_FIELD - (DIP - d))
+    top = FL_FIELD + 1.0
+    hh = h1 + slope * 1.0
+    poly = [(y - hh, top), (y + hh, top), (y + h0, DIP - d), (y - h0, DIP - d)]
+    return (cq.Workplane("YZ").workplane(offset=x - w / 2 - d).polyline(poly).close().extrude(w + 2 * d))
+
+
 def ramp(x, hw, pts, d):
     """スロット端のランプ下の材料（YZ断面を押し出し）。d=板厚オフセット"""
     y_a, y_b = pts[0][0], pts[-1][0]
@@ -163,6 +177,8 @@ def solid(d):
     s = outer(d).cut(field(d))
     for x, y, w, h in DIPS:
         s = s.cut(dip(x, y, w, h, d))
+    for x, y, w, h in DIPS_Y:
+        s = s.cut(dip_y(x, y, w, h, d))
     for x, hw, pts in RAMPS:
         s = s.union(ramp(x, hw, pts, d))
     for x0, x1, y0, y1, c, corners in PILLARS:
