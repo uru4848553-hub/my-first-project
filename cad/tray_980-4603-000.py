@@ -3,7 +3,8 @@
 座標: 原点=トレー中心、X右、Y上（図面の上面図と同じ向き）、Z=0がフランジ面、Z=40.5が上面。
 
 形状の構造（実物写真・A-A/B-B断面より）
-  * 外周リム: 上面(z=40.5)の帯。外形は 210(底)→202(上) の抜き勾配つき R15。
+  * 外周リム: 中空のテント形。外壁は根元207→上面202、内壁は上面192→床182。上面の帯の幅は5。
+    根元に幅1.5・厚さ0.8の縁(つば)が出て、その外形が 210 (4-R15)。
   * 内側は低い「床」(z=FL_FIELD)。凹みではなく、床から柱が立っている。
   * 柱: 台形の柱(底18.5→上15.9)。上端6.5mmは十字形（四隅を段落ち＝クリップ/L字フック）。
         内側4列×4行=16本。上端・下端・左右の外周にも同じ柱が並び、リムとつながる。
@@ -14,10 +15,13 @@ import math
 import cadquery as cq
 
 # ---------------- 寸法 ----------------
-W0, W1 = 210.0, 202.0          # 底面外形 / 上面外形
+LIP_W = 210.0                  # 底の縁(つば)の外形  (4-R15)
+W0, W1 = 207.0, 202.0          # 壁の根元の外形(210-縁) / 上面外形
+FLOOR_W, TOP_IN_W = 182.0, 192.0   # リム内壁の床の高さでの幅 / 上面での幅  (5+192+5=202)
 H = 40.5                       # 全高
 T = 0.8                        # 板厚
-R = 15.0                       # 外形コーナー R15
+R = 15.0                       # 縁の外形コーナー 4-R15
+R_BASE = R - (LIP_W - W0) / 2   # 壁の根元のコーナーR（縁と同心）
 FL_FIELD = 6.3                 # 床(柱の根元)の高さ  (A-A断面)
 SHELF = 23.5                   # 横腕・通路・スロットの底（棚）の高さ (A-A/B-B断面の細線 z≈23.5、写真の「浅い棚」)
 PAD_DEPTH = 1.2                # 長方形の窪みの深さ（床から）
@@ -25,13 +29,14 @@ WALL_DRAFT = math.degrees(math.atan(((W0 - W1) / 2) / H))
 
 PITCH = 35.0
 PIL_X = [-52.5, -17.5, 17.5, 52.5]                  # 内側の柱の列
-PIL_Y = {k: 8.3 + 33.0 * k for k in range(-3, 3)}   # 柱の行 k=-3(下端)..2(上端)
-PIL_BASE, PIL_TOP = 18.5, 15.9                      # 柱の底/上端の幅
+PIL_Y = {k: 8.2 + 33.0 * k for k in range(-3, 3)}   # 柱の行 k=-3(下端)..2(上端)。-8.3の行と半ピッチずれ
+PIL_BASE, PIL_TOP = 19.5, 15.5                      # 柱の底/上端の幅 (A-A: 19.5。柱どうしの隙間は上端19.5・底15.5)
 PIL_TAPER = math.degrees(math.atan(((PIL_BASE - PIL_TOP) / 2) / (H - FL_FIELD)))
 SIDE_X = 87.5                                       # 左右の外周の柱の列
 
 # 床の範囲（リムの内側）。上面の図面の外側の線
-FIELD = dict(x0=-96.0, x1=96.0, y0=-95.0, y1=93.8, r=8.0)
+FIELD = dict(x0=-96.0, x1=96.0, y0=-96.0, y1=96.0, r=8.0)   # 上面(z=40.5)での内側の縁。5+192+5
+FIELD_TAPER = math.degrees(math.atan(((TOP_IN_W - FLOOR_W) / 2) / (H - 3.8)))   # 内壁の傾き(≈7.8°)
 
 # クリップ（上端6.5mmの十字形の四隅を段落ちにする）
 # 柱の中心から |x| 2.9〜、|y| 4.3〜 の四隅。段の高さは上面から6.5mm下（B-B断面の寸法6.5）
@@ -41,20 +46,19 @@ RELIEF_X, RELIEF_Y, SHOULDER = (2.9, 12.0), (4.3, 12.0), 34.0
 # (中心x, 中心y, 幅x, 幅y)  壁は垂直
 SHELVES = []                                          # 底が z=SHELF の棚
 PADS = []                                             # 床から PAD_DEPTH だけ下がる長方形の窪み
-ROW_RC = [-7.5 + 33.0 * k for k in range(-2, 2)]
+ROW_RC = [-8.3 + 33.0 * k for k in range(-2, 2)]      # B-B: C線から8.3、ピッチ33
 for x in (-35.0, 0.0, 35.0):
     for y in ROW_RC:
         PADS.append((x, y, 15.4, 12.5))
-    SHELVES.append((x, 72.3, PITCH - PIL_BASE, 43.0))            # 上端スロット（柱の間）
+    SHELVES.append((x, 73.4, PITCH - PIL_BASE, 45.2))            # 上端スロット（柱の間 15.5）
 TAB_H = 17.0
-TAB_Y = [25.25 + 33.0 * i for i in range(-3, 2)]
-TAB_Y[0] = -73.2
+TAB_Y = [-8.3 + 33.0 * i for i in range(-2, 3)]                 # 上端から43.3、下端から26.8 の線 (B-B)
 for s_ in (-1, 1):
-    SHELVES.append((s_ * 70.0, 72.3, PITCH - PIL_BASE, 43.0))    # 上端スロット
-    SHELVES.append((s_ * 70.45, -7.0, 15.5, 146.0))              # 縦通路 (y=-80〜66)
-    SHELVES.append((s_ * 69.75, -87.5, 19.7, 15.0))              # 通路下端の縦長凹み (L字の脚)
-    for y in TAB_Y:                                              # 横腕
-        SHELVES.append((s_ * 79.35, y, 33.3, TAB_H))
+    SHELVES.append((s_ * 70.0, 73.4, PITCH - PIL_BASE, 45.2))    # 上端スロット
+    SHELVES.append((s_ * 70.0, -7.0, 15.5, 146.0))               # 縦通路 15.5 (x=62.25〜77.75, y=-80〜66)
+    SHELVES.append((s_ * 70.0, -88.0, 15.5, 16.0))               # 通路下端の縦長凹み (L字の脚。y=-96〜-80)
+    for y in TAB_Y:                                              # 横腕（通路の外側 77.75〜 から、床の縁 91 より外まで）
+        SHELVES.append((s_ * 79.125, y, 33.75, TAB_H))
 
 
 # ---------------- 柱の一覧 ----------------
@@ -94,17 +98,25 @@ def box(x0, x1, y0, y1, z0, z1):
 def outer(d):
     top = H - d
     return (cq.Workplane("XY").workplane(offset=-1 if d else 0)
-            .sketch().rect(W0 - 2 * d, W0 - 2 * d).vertices().fillet(R - d).finalize()
+            .sketch().rect(W0 - 2 * d, W0 - 2 * d).vertices().fillet(R_BASE - d).finalize()
             .extrude(top + (1 if d else 0), taper=WALL_DRAFT))
 
 
 def field(d):
+    """リム内側の床の範囲。上面で192、床で182になるよう内壁を傾ける"""
     f = FIELD
     w, h = f["x1"] - f["x0"] + 2 * d, f["y1"] - f["y0"] + 2 * d
-    cx, cy = (f["x0"] + f["x1"]) / 2, (f["y0"] + f["y1"]) / 2
-    return (cq.Workplane("XY").workplane(offset=FL_FIELD - d).center(cx, cy)
+    return (cq.Workplane("XY").workplane(offset=H + 0.01)
             .sketch().rect(w, h).vertices().fillet(f["r"] + d).finalize()
-            .extrude(H + 1 - FL_FIELD))
+            .extrude(-(H + 0.01 - (FL_FIELD - d)), taper=FIELD_TAPER))
+
+
+def lip():
+    """底の縁(つば): 外形210(R15)、壁の外側から出る幅1.5・厚さ0.8"""
+    outer_ = (cq.Workplane("XY").sketch().rect(LIP_W, LIP_W).vertices().fillet(R).finalize().extrude(T))
+    inner_ = (cq.Workplane("XY").workplane(offset=-1).sketch().rect(W0 - 2 * T, W0 - 2 * T)
+              .vertices().fillet(R_BASE - T).finalize().extrude(T + 2))
+    return outer_.cut(inner_)
 
 
 def shelf(x, y, w, h, d):
@@ -144,7 +156,7 @@ def solid(d):
 
 
 if __name__ == "__main__":
-    tray = solid(0).cut(solid(T))
+    tray = solid(0).cut(solid(T)).union(lip())
     cq.exporters.export(tray, "980-4603-000.step")
     bb = tray.val().BoundingBox()
     print("valid:", tray.val().isValid(), "solids:", tray.solids().size())
