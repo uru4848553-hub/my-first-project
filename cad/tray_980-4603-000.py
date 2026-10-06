@@ -139,9 +139,16 @@ def lip():
     return outer_.cut(inner_)
 
 
+R_PIL = 4.0                    # 柱の角のR。傾きで半径が縮んでも上端まで残る大きさ（小さいと円すいの先が尖って退化辺になる）
+R_CELL = 1.5                   # 〇・×ブロックの角のR（図面の角丸。斜めに隣り合うブロックが辺で接して非多様体にならないように）
+
+
 def raised(x0, x1, y0, y1, level, d):
-    """床から盛り上げたブロック（〇・×）。d=板厚オフセット"""
-    return box(x0 + d, x1 - d, y0 + d, y1 - d, FLOOR - d - 0.5, level - d)
+    """床から盛り上げたブロック（〇・×）。d=板厚オフセット。角を丸める"""
+    z0 = FLOOR - d - 0.5
+    return (cq.Workplane("XY").workplane(offset=z0).center((x0 + x1) / 2, (y0 + y1) / 2)
+            .sketch().rect(x1 - x0 - 2 * d, y1 - y0 - 2 * d).vertices().fillet(R_CELL - d).finalize()
+            .extrude(level - d - z0))
 
 
 def ramp(x, hw, pts, d):
@@ -158,7 +165,7 @@ def pillar(x0, x1, y0, y1, c, corners, d):
     z0 = FL_FIELD - d - 0.5
     grow = 2 * (PIL_REF_Z - FLOOR + 0.5) * math.tan(math.radians(PIL_TAPER))   # 底の幅は z=PIL_REF_Z での寸法
     body = (cq.Workplane("XY").workplane(offset=z0).center(cx, cy)
-            .sketch().rect(x1 - x0 - 2 * d + grow, y1 - y0 - 2 * d + grow).vertices().fillet(2.5).finalize()
+            .sketch().rect(x1 - x0 - 2 * d + grow, y1 - y0 - 2 * d + grow).vertices().fillet(R_PIL).finalize()
             .extrude(H - d - z0, taper=PIL_TAPER))
     for sx, sy in corners:
         xa, xb = sorted((c[0] + sx * (RELIEF_X[0] - d), c[0] + sx * RELIEF_X[1]))
