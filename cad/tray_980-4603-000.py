@@ -65,8 +65,11 @@ for s_ in (-1, 1):
     for y in TAB_Y:                                               # 横腕: 通路の外側 77.75 から床の縁 91 まで(13.3)＋通路
         DIPS.append((s_ * 76.625, y, 28.75, TAB_H))
 
-# B-B断面: 上端スロット端部。リム内壁(y≈93.7@z=24)→幅5の段(z≈23.4)→傾斜(長さ約10, 高さ20)→底
-RAMPS = [(x, (PITCH - PIL_BASE) / 2 - 1.0, [(97.0, 40.0), (93.0, 40.0), (91.5, 24.0), (86.5, 23.4), (81.5, DIP)])
+# B-B断面: 上端スロット端部（拡大図より）
+#   リム内壁(上面96→z=23.7で93.7) → 長さ5.2の平らな段(z=23.5) → 傾斜(長さ7、高さ約20) → 底(DIP)
+#   段・傾斜はスロットの幅いっぱい（柱の壁の中まで）に付ける。
+LEDGE_Z, LEDGE_Y0, LEDGE_LEN, RAMP_RUN = 23.5, 93.7, 5.2, 7.0
+RAMPS = [(x, 10.0, [(97.0, LEDGE_Z), (LEDGE_Y0 - LEDGE_LEN, LEDGE_Z), (LEDGE_Y0 - LEDGE_LEN - RAMP_RUN, DIP)])
          for x in (-70.0, -35.0, 0.0, 35.0, 70.0)]
 
 
@@ -144,8 +147,9 @@ def pillar(x0, x1, y0, y1, c, corners, d):
     """台形の柱。上端は十字形（四隅を z=SHOULDER まで落とす）。d=板厚オフセット"""
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     z0 = FL_FIELD - d - 0.5
+    grow = 2 * 0.5 * math.tan(math.radians(PIL_TAPER))     # 0.5mm下から始めるぶん、床の高さで寸法どおりになるよう広げる
     body = (cq.Workplane("XY").workplane(offset=z0).center(cx, cy)
-            .sketch().rect(x1 - x0 - 2 * d, y1 - y0 - 2 * d).vertices().fillet(2.5).finalize()
+            .sketch().rect(x1 - x0 - 2 * d + grow, y1 - y0 - 2 * d + grow).vertices().fillet(2.5).finalize()
             .extrude(H - d - z0, taper=PIL_TAPER))
     for sx, sy in corners:
         xa, xb = sorted((c[0] + sx * (RELIEF_X[0] - d), c[0] + sx * RELIEF_X[1]))
