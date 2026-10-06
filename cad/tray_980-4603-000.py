@@ -28,7 +28,7 @@ FLOOR = 4.0                    # 一番低い床（印のない場所: 長方形
 LEVEL_O = 6.0                  # 〇: 柱の横のすき間（床+2）
 LEVEL_X = 8.0                  # ×: 柱の縦のすき間（床+4）
 FL_FIELD = FLOOR
-PIL_REF_Z = LEVEL_O            # 柱の底幅(19.5)はこの高さでの寸法（A-A）
+PIL_REF_Z = LEVEL_X            # 柱の底幅(19.5)は×の帯の上面(z=8)での寸法。×の帯は柱の下までつながる
 WALL_DRAFT = math.degrees(math.atan(((W0 - W1) / 2) / H))
 
 PITCH = 35.0
@@ -53,20 +53,35 @@ FIELD_TAPER = math.degrees(math.atan(((TOP_IN_W - FLOOR_W) / 2) / (H - FLOOR))) 
 RELIEF_X, RELIEF_Y = (ARM_X / 2, 12.0), (ARM_Y / 2, 12.0)   # 逃がし: |x|>=3.25, |y|>=5.0
 
 # ---------------- 床の段（〇・×）----------------
-# 印のない場所は FLOOR（一番低い）。〇・×は床から盛り上げたブロック。
-#   〇 (LEVEL_O): 柱の横のすき間。列 x=0,±35,±70（幅15.5）× 柱の行 k=-2..1（柱の底の幅20）
-#   × (LEVEL_X): 柱の縦のすき間。柱の列 x=±17.5,±52.5（幅19.5）× 行間 y=-8.3+33j（13）
-CELLS = []                                           # (x0, x1, y0, y1, 高さ)
-for xq in (-70.0, -35.0, 0.0, 35.0, 70.0):
-    for k in range(-2, 2):
-        yc = PIL_Y[k]
-        CELLS.append((xq - (PITCH - PIL_BASE_X) / 2, xq + (PITCH - PIL_BASE_X) / 2,
-                      yc - PIL_BASE_Y / 2, yc + PIL_BASE_Y / 2, LEVEL_O))
-for xp in (-52.5, -17.5, 17.5, 52.5):
-    for j in range(-2, 3):
-        yb = -8.3 + 33.0 * j
-        gap = 33.0 - PIL_BASE_Y
-        CELLS.append((xp - PIL_BASE_X / 2, xp + PIL_BASE_X / 2, yb - gap / 2, yb + gap / 2, LEVEL_X))
+# 印のない場所は FLOOR（一番低い）。柱の列に沿って連続した帯（×=柱の列、〇=すき間の列）を床から立ち上げ、
+# 窪み（長方形の窪み・横腕・スロット）を〇の帯へ傾斜つきで彫り込む。こうすると
+#   ×の帯が柱の下までつながり、〇と×が角だけで接する所もできない。
+STRIP_Y = 94.0                                        # 帯はリムの内側まで（リムの中に食い込ませて一体にする）
+STRIPS = []                                           # (x0, x1, 高さ)
+for xp in PIL_X:                                      # × (LEVEL_X): 柱の列。幅19.5（柱の底の幅）
+    STRIPS.append((xp - PIL_BASE_X / 2, xp + PIL_BASE_X / 2, LEVEL_X))
+Q_COLS = (-70.0, -35.0, 0.0, 35.0, 70.0)
+Q_HALF = (PITCH - PIL_BASE_X) / 2                     # 7.75（柱どうしのすき間15.5の半分）
+for xq in Q_COLS:                                     # 〇 (LEVEL_O): すき間の列
+    STRIPS.append((xq - Q_HALF, xq + Q_HALF, LEVEL_O))
+
+# 窪み（印なし）: Y方向の壁が傾斜。上端(〇の高さ)で幅17、底で幅12.6（B-B）。
+PAD_TOP, PAD_FLOOR = 17.0, 12.6
+PAD_ROWS = [-8.3 + 33.0 * j for j in range(-2, 3)]    # 窪みの行（B-B: C線から8.3、ピッチ33）
+PADS = []                                             # (x0, x1, 行のy)
+for xq in Q_COLS:
+    if abs(xq) > 60:                                  # x=±70 の列は横腕(通路の幅15.5＋13.3)まで続く
+        sg = 1 if xq > 0 else -1
+        x0, x1 = sorted((sg * (xq * sg - Q_HALF), sg * 91.5))
+    else:
+        x0, x1 = xq - Q_HALF, xq + Q_HALF
+    for yb in PAD_ROWS:
+        PADS.append((x0, x1, yb))
+# 窪みの行の外側: 上端スロット(y=60〜94)・下端の縦長凹み(y=-94〜-75)も床まで下げる（壁は垂直）
+LOW_BOXES = []                                        # (x0, x1, y0, y1)
+for xq in Q_COLS:
+    LOW_BOXES.append((xq - Q_HALF, xq + Q_HALF, 60.0, STRIP_Y))
+    LOW_BOXES.append((xq - Q_HALF, xq + Q_HALF, -STRIP_Y, -75.0))
 
 # B-B断面: 上端スロット端部（拡大図より）
 #   リム内壁(上面96→z=23.7で93.7) → 長さ5.2の平らな段(z=23.5) → 傾斜(長さ7、高さ約20) → 底(FLOOR)
@@ -140,15 +155,20 @@ def lip():
 
 
 R_PIL = 4.0                    # 柱の角のR。傾きで半径が縮んでも上端まで残る大きさ（小さいと円すいの先が尖って退化辺になる）
-R_CELL = 1.5                   # 〇・×ブロックの角のR（図面の角丸。斜めに隣り合うブロックが辺で接して非多様体にならないように）
+def strip(x0, x1, level, d):
+    """床から立ち上げた帯（柱の列に沿って連続）。d=板厚オフセット"""
+    return box(x0 + d, x1 - d, -STRIP_Y + d, STRIP_Y - d, FLOOR - d - 0.5, level - d)
 
 
-def raised(x0, x1, y0, y1, level, d):
-    """床から盛り上げたブロック（〇・×）。d=板厚オフセット。角を丸める"""
-    z0 = FLOOR - d - 0.5
-    return (cq.Workplane("XY").workplane(offset=z0).center((x0 + x1) / 2, (y0 + y1) / 2)
-            .sketch().rect(x1 - x0 - 2 * d, y1 - y0 - 2 * d).vertices().fillet(R_CELL - d).finalize()
-            .extrude(level - d - z0))
+def pad_cut(x0, x1, yb, d):
+    """窪み: Y方向の壁が傾斜（上端17→底12.6）。帯の幅より少し広くして、帯の横の壁には触れない"""
+    top = LEVEL_O + 1.0
+    slope = (PAD_TOP - PAD_FLOOR) / 2 / (LEVEL_O - FLOOR)
+    h0 = PAD_FLOOR / 2 + d
+    hh = h0 + slope * (top - (FLOOR - d))
+    poly = [(yb - hh, top), (yb + hh, top), (yb + h0, FLOOR - d), (yb - h0, FLOOR - d)]
+    m = 1.0                                           # 帯より広げる量（空気を切るだけ）
+    return (cq.Workplane("YZ").workplane(offset=x0 - m - d).polyline(poly).close().extrude(x1 - x0 + 2 * m + 2 * d))
 
 
 def ramp(x, hw, pts, d):
@@ -177,8 +197,16 @@ def pillar(x0, x1, y0, y1, c, corners, d):
 def solid(d):
     """d=0: 外形ソリッド、d=T: 板厚ぶん内側のソリッド（下面は開放）"""
     s = outer(d).cut(field(d))
-    for x0, x1, y0, y1, level in CELLS:
-        s = s.union(raised(x0, x1, y0, y1, level, d))
+    for x0, x1, level in STRIPS:
+        if level == LEVEL_O:
+            s = s.union(strip(x0, x1, level, d))
+    for x0, x1, yb in PADS:
+        s = s.cut(pad_cut(x0, x1, yb, d))
+    for x0, x1, y0, y1 in LOW_BOXES:
+        s = s.cut(box(x0 - d, x1 + d, y0 - d, y1 + d, FLOOR - d, LEVEL_X + 1))
+    for x0, x1, level in STRIPS:
+        if level == LEVEL_X:
+            s = s.union(strip(x0, x1, level, d))
     for x, hw, pts in RAMPS:
         s = s.union(ramp(x, hw, pts, d))
     for x0, x1, y0, y1, c, corners in PILLARS:
