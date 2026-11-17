@@ -8,6 +8,9 @@ plan.json の各セクションに、タイムラインへ置くクリップの�
 静止画（素材の画像・最終フレームの PNG）は、その画像が必要な尺だけ続く動画（mp4）にしてから置く。
 Resolve は静止画を AppendToTimeline で置くと endFrame を無視して既定の長さ（5秒）で置くため（実機で確認）。
 元の画像は clip の "image"、置く動画は "path" に入る。
+
+素材の画像は、設定（still_motion）で「ゆっくり寄る／引く」動きを付けられる（clip の "motion" に "in"/"out"）。
+最終フレームの静止画には付けない（動画の続きが急に動き出すと不自然なため）。
 """
 import hashlib
 import math
@@ -15,6 +18,7 @@ import os
 
 from core.ffmpeg import FFmpegError, extract_last_frame, probe_video, still_to_video
 
+MOTIONS = ("none", "zoom_in", "zoom_out", "alternate")
 FREEZE_DIR = "_freeze"
 STILLS_DIR = "_stills"
 LONG_FREEZE_SEC = 2.0
@@ -77,35 +81,51 @@ def _file_hash(path):
         return hashlib.sha1(fp.read()).hexdigest()[:8]
 
 
-def still_video_path(image_path, frames):
+def still_video_path(image_path, frames, motion=None, zoom=1.08):
     """静止画を動画にしたファイルの置き場所。素材の画像は media/_stills/、最終フレームは media/_freeze/ に並べる。
-    名前に画像の内容のハッシュと長さを入れ、同じ画像・同じ長さなら使い回す。"""
+    名前に画像の内容のハッシュと長さ（動きを付けるなら動きと倍率も）を入れ、同じなら使い回す。"""
     folder, name = os.path.split(image_path)
     stem = os.path.splitext(name)[0]
+    tag = f"_z{motion}{round(zoom * 100)}" if motion else ""
     if os.path.basename(folder) == FREEZE_DIR:
         # 最終フレームの PNG は名前にすでに内容のハッシュが入っている
-        return os.path.join(folder, f"{stem}_{frames}f.mp4")
-    return os.path.join(folder, STILLS_DIR, f"{stem}_{_file_hash(image_path)}_{frames}f.mp4")
+        return os.path.join(folder, f"{stem}_{frames}f{tag}.mp4")
+    return os.path.join(folder, STILLS_DIR, f"{stem}_{_file_hash(image_path)}_{frames}f{tag}.mp4")
 
 
-def _ensure_still_video(image_path, frames, fps, log):
-    dst = still_video_path(image_path, frames)
+def _ensure_still_video(image_path, frames, fps, log, motion=None, zoom=1.08):
+    dst = still_video_path(image_path, frames, motion, zoom)
     if os.path.isfile(dst) and os.path.getsize(dst) > 0:
         return dst
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     tmp = dst[:-4] + ".tmp.mp4"
-    still_to_video(image_path, tmp, frames, fps)
+    still_to_video(image_path, tmp, frames, fps, motion, zoom)
     os.replace(tmp, dst)
     log(f"静止画を動画にしました: {os.path.basename(image_path)} → {os.path.basename(dst)}")
     return dst
 
 
-def apply_fit(plan, log=print):
-    """plan の各セクションに clips を付ける（plan を直接書き換える）。戻り値: (エラー, 警告)"""
+def motion_for(setting, index):
+    """設定 still_motion と、素材の画像の通し番号（0始まり）から、その画像の動き（None/"in"/"out"）を決める"""
+    if setting == "zoom_in":
+        return "in"
+    if setting == "zoom_out":
+        return "out"
+    if setting == "alternate":
+        return "in" if index % 2 == 0 else "out"
+    return None
+
+
+def apply_fit(plan, log=print, motion="none", zoom=1.08):
+    """plan の各セクションに clips を付ける（plan を直接書き換える）。戻り値: (エラー, 警告)
+
+    motion: 素材の画像の動き（"none"/"zoom_in"/"zoom_out"/"alternate"＝寄る・引くを交互に）、zoom: 寄ったときの倍率
+    """
     fps = plan["fps"]
     errors = []
     warnings = []
     probes = {}
+    image_index = 0
 
     for sec in plan["sections"]:
         media = sec["media"]
@@ -137,7 +157,13 @@ def apply_fit(plan, log=print):
             for clip in clips:
                 if clip["type"] != "video":
                     clip["image"] = clip["path"]
-                    clip["path"] = _ensure_still_video(clip["image"], clip["frames"], fps, log)
+                    move = None
+                    if clip["type"] == "image":
+                        move = motion_for(motion, image_index)
+                        image_index += 1
+                        if move:
+                            clip["motion"] = move
+                    clip["path"] = _ensure_still_video(clip["image"], clip["frames"], fps, log, move, zoom)
         except FFmpegError as e:
             errors.append(f"{sec['label']}: 静止画を動画にできません（{os.path.basename(clip['image'])}）: {e}")
             continue

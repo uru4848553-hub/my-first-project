@@ -14,6 +14,10 @@ DEFAULTS = {
     "low_confidence": 0.5,
     # ナレーションがないとき、画像（静止画）のシーンを何秒にするか
     "still_seconds": 3.0,
+    # 素材の画像（静止画）の動き："none"＝止まったまま／"zoom_in"＝ゆっくり寄る／"zoom_out"＝ゆっくり引く／
+    # "alternate"＝寄る・引くを交互に（ドキュメンタリー風）。最終フレームの静止画には付けない
+    "still_motion": "none",
+    "still_zoom": 1.08,            # 寄ったときの倍率（1 より大きく 1.5 以下）
     # テロップ（台本の「テロップ：〜」）
     # "text"：Resolve のメディアプールのひな形（Text+）を置いて文字を入れる（Resolve で直せる）
     # "video"：文字を描いた透明付きの動画を置く（以前の方式。下の telop_font 〜 telop_max_width はこのときの見た目）
@@ -63,6 +67,11 @@ def load_config(path=None):
         raise ConfigError(f"config.json の telop_line_chars は 0 以上の整数にしてください（現在: {config['telop_line_chars']!r}）")
     if not isinstance(config["still_seconds"], (int, float)) or config["still_seconds"] <= 0:
         raise ConfigError(f"config.json の still_seconds は正の数にしてください（現在: {config['still_seconds']!r}）")
+    if config["still_motion"] not in ("none", "zoom_in", "zoom_out", "alternate"):
+        raise ConfigError("config.json の still_motion は \"none\" \"zoom_in\" \"zoom_out\" \"alternate\" のどれかにしてください"
+                          f"（現在: {config['still_motion']!r}）")
+    if not isinstance(config["still_zoom"], (int, float)) or not 1 < config["still_zoom"] <= 1.5:
+        raise ConfigError(f"config.json の still_zoom は 1 より大きく 1.5 以下の数にしてください（現在: {config['still_zoom']!r}）")
     if config["telop_mode"] not in ("text", "video"):
         raise ConfigError(f"config.json の telop_mode は \"text\" か \"video\" にしてください（現在: {config['telop_mode']!r}）")
     if not isinstance(config["telop_template"], str) or not config["telop_template"].strip():

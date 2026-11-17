@@ -191,7 +191,7 @@ def build(folder, config, fake_align=False, title=None):
 
     # フェーズ3：尺調整（動画が足りない分は最終フレームの静止画で埋める）
     if not plan_errors:
-        fit_errors, fit_warnings = apply_fit(plan)
+        fit_errors, fit_warnings = apply_fit(plan, motion=config["still_motion"], zoom=config["still_zoom"])
         check.errors.extend(fit_errors)
         check.warnings.extend(fit_warnings)
         # テロップ："text" は Resolve のひな形（Text+）で置くので、ここでは何も作らない。"video" は透明付きの動画を作る
@@ -277,6 +277,8 @@ def main(argv=None):
     parser.add_argument("--launch-resolve", action="store_true", help="Resolve が起動していなければ起動する")
     parser.add_argument("--telop-bg", choices=("on", "off"),
                         help="テロップに黒い下地を付ける（on）／付けない（off）。省略時は config.json の telop_background")
+    parser.add_argument("--motion", choices=("none", "zoom_in", "zoom_out", "alternate"),
+                        help="素材の画像にゆっくりズームを付ける（省略時は config.json の still_motion）")
     parser.add_argument("--title", help="ビン・タイムラインの名前（省略時はフォルダ名）")
     parser.add_argument("--project", help="Resolve のこのプロジェクトに置く（なければ作る）。省略時は今開いているプロジェクト")
     args = parser.parse_args(argv)
@@ -294,6 +296,8 @@ def main(argv=None):
         return 1
     if args.telop_bg:
         config["telop_background"] = args.telop_bg == "on"
+    if args.motion:
+        config["still_motion"] = args.motion
 
     plan = build(args.folder, config, fake_align=args.fake_align, title=args.title)
     if plan is None:
