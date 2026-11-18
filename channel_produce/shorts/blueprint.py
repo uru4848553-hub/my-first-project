@@ -257,3 +257,116 @@ def save_mp4(frames, path, fps=FPS):
 def ease(t):
     t = max(0.0, min(1.0, t))
     return 1 - (1 - t) ** 3
+
+
+# ---- 全話共通の場面 ----
+
+BX, BY, BW, BH = 150, 760, 520, 780   # ビル全体を見せるときの位置
+
+
+def building_scene(d, labels, names, highlight=None, poses=None, label_size=44):
+    """4人が1人ずつ住むビルの全体。戻り値：各階の枠（下から）"""
+    floors = building(d, BX, BY, BW, BH, labels=labels, highlight=highlight, label_size=label_size)
+    for i, (a, top, b, bot) in enumerate(floors):
+        on = highlight is not None and i in highlight
+        pose = poses[i] if poses else "stand"
+        person(d, a + 170, bot - 14, h=150, color=AMBER if on else LINE, pose=pose, width=4)
+        if names:
+            text(d, (a + 300, bot - 40), names[i], 30, fill=LINE_DIM)
+    return floors
+
+
+def intro_stack(labels, names, photo_title, label_size=44):
+    """写真（4人並び）にひびが入り、ビルが1階ずつ積み上がり、1階から順に光る（約3.2秒）。
+    効果音「トン」は、この場面の頭から +0.4 +0.6 +0.8 +1.0 秒"""
+    frames = []
+    fh = BH / 4
+    for f in range(48):
+        im, d = canvas()
+        t = f / FPS
+        if t < 0.4:
+            d.rectangle([120, 820, 960, 1300], outline=WHITE, width=6)
+            text(d, (540, 780), photo_title, 40, fill=LINE_DIM)
+            for i in range(4):
+                person(d, 230 + i * 205, 1250, h=320, color=LINE, width=5)
+            if t > 0.27:
+                for i in range(1, 4):
+                    x = 120 + i * 210
+                    d.line([(x, 820), (x + 12, 1060), (x - 8, 1300)], fill=AMBER, width=6)
+        else:
+            k = (t - 0.4) / 0.2
+            shown = min(4, int(k) + 1)
+            for i in range(shown):
+                top, bot = BY + BH - (i + 1) * fh, BY + BH - i * fh
+                drop = (1 - ease(min(1, (k - i) * 1.6))) if i == shown - 1 and k < 4 else 0
+                off = -140 * drop
+                d.rectangle([BX, top + off, BX + BW, bot + off], outline=LINE, width=6)
+                text(d, (BX + 18, top + off + 16), FLOOR_LABELS[i], 30, fill=LINE, anchor="lt")
+                person(d, BX + 170, bot - 14 + off, h=150, color=LINE, width=4)
+                if names:
+                    text(d, (BX + 300, bot - 40 + off), names[i], 30, fill=LINE_DIM)
+                text(d, (BX + BW + 22, (top + bot) / 2 + off), labels[i], label_size, fill=WHITE, anchor="lm")
+            d.line([(BX - 60, BY + BH), (BX + BW + 60, BY + BH)], fill=WHITE, width=6)
+        frames.append(im)
+    for i in range(4):
+        im, d = canvas()
+        building_scene(d, labels, names, highlight=[i], label_size=label_size)
+        frames += [im] * 12
+    im, d = canvas()
+    building_scene(d, labels, names, label_size=label_size)
+    frames += [im] * 12
+    return frames
+
+
+def loop_end(labels, names, label_size=44):
+    """最後の絵＝intro_stack の最後の絵（ループで冒頭へ戻ったとき、つなぎ目を目立たせない）"""
+    im, d = canvas()
+    building_scene(d, labels, names, label_size=label_size)
+    return im
+
+
+def clock(d, cx, cy, hour, minute=0, r=70, color=LINE, label=None):
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=color, width=5)
+    for k in range(12):
+        a = math.radians(k * 30)
+        d.line([(cx + math.sin(a) * r * 0.82, cy - math.cos(a) * r * 0.82),
+                (cx + math.sin(a) * r * 0.95, cy - math.cos(a) * r * 0.95)], fill=color, width=3)
+    ah = math.radians((hour % 12 + minute / 60) * 30)
+    am = math.radians(minute * 6)
+    d.line([(cx, cy), (cx + math.sin(ah) * r * 0.5, cy - math.cos(ah) * r * 0.5)], fill=AMBER, width=6)
+    d.line([(cx, cy), (cx + math.sin(am) * r * 0.78, cy - math.cos(am) * r * 0.78)], fill=WHITE, width=4)
+    if label:
+        text(d, (cx, cy + r + 30), label, 30, fill=AMBER)
+
+
+def sky(d, box, kind):
+    """窓の外の空。kind: fireworks / rain / cloudy / sunrise / moon"""
+    x0, y0, x1, y1 = box
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    w, h = x1 - x0, y1 - y0
+    if kind == "fireworks":
+        for (fx, fy, r) in [(0.3, 0.3, 0.18), (0.7, 0.45, 0.14)]:
+            px, py, rr = x0 + w * fx, y0 + h * fy, w * r
+            for k in range(12):
+                a = math.radians(k * 30)
+                d.line([(px + math.cos(a) * rr * 0.3, py + math.sin(a) * rr * 0.3),
+                        (px + math.cos(a) * rr, py + math.sin(a) * rr)], fill=AMBER, width=3)
+    elif kind == "rain":
+        for k in range(14):
+            x = x0 + 15 + (k * 37) % (w - 30)
+            y = y0 + 15 + (k * 53) % (h - 50)
+            d.line([(x, y), (x - 10, y + 30)], fill=LINE, width=3)
+    elif kind == "cloudy":
+        for (fx, fy) in [(0.35, 0.35), (0.62, 0.5)]:
+            px, py = x0 + w * fx, y0 + h * fy
+            for dx, rr in [(-30, 26), (0, 36), (32, 26)]:
+                d.ellipse([px + dx - rr, py - rr, px + dx + rr, py + rr], outline=LINE, width=3)
+    elif kind == "sunrise":
+        d.pieslice([cx - w * 0.25, y1 - h * 0.3, cx + w * 0.25, y1 + h * 0.2], 180, 360, outline=AMBER, width=4)
+        for k in range(5):
+            a = math.radians(200 + k * 35)
+            d.line([(cx + math.cos(a) * w * 0.3, y1 - h * 0.05 + math.sin(a) * w * 0.3),
+                    (cx + math.cos(a) * w * 0.42, y1 - h * 0.05 + math.sin(a) * w * 0.42)], fill=AMBER, width=4)
+    elif kind == "moon":
+        d.ellipse([cx - 30, cy - 50, cx + 30, cy + 10], outline=WHITE, width=4)
+        d.ellipse([cx - 12, cy - 60, cx + 42, cy - 2], fill=NAVY)

@@ -22,10 +22,15 @@ SCRIPT = """# 同じ3万円、4つの重さ（年収別）
 
 ## S01
 テロップ：修理代 3万円
+効果音：K01 +0.35
 スマホが割れた。
 
 ## S02
 テロップ：同期4人 年収別 視えている世界
+効果音：K02 +0.4
+効果音：K02 +0.6
+効果音：K02 +0.8
+効果音：K02 +1.0
 同じ年に入社した、同期の4人。同じ3万円が、まったく違う重さだった。
 
 ## S03
@@ -263,9 +268,14 @@ def main():
             old.unlink()
     (OUT / "audio").mkdir(exist_ok=True)
     (OUT / "audio" / "ここにナレーション（mp3など1本）を入れる.txt").write_text(
-        "script.md の本文（「テロップ：」と「//」の行を除く）を読み上げた音声を、このフォルダに1本だけ入れてください。\n",
+        "script.md の本文（「テロップ：」「効果音：」と「//」の行を除く）を読み上げた音声を、このフォルダに1本だけ入れてください。\n",
         encoding="utf-8")
     (OUT / "script.md").write_text(SCRIPT, encoding="utf-8")
+    import sfx
+    se = OUT / "se"
+    se.mkdir(exist_ok=True)
+    sfx.make("ガシャッ", se / "K01_ガシャッ.wav")
+    sfx.make("トン", se / "K02_トン.wav")
     save_mp4(s01_crack(), MEDIA / "S01_スマホが割れる.mp4")
     save_mp4(s02_split(), MEDIA / "S02_同期4人が各階へ.mp4")
     for name, fn in [("S03_1F_ケンタ", s03_kenta), ("S04_2F_ユイ", s04_yui), ("S05_3F_ショウ", s05_sho),
