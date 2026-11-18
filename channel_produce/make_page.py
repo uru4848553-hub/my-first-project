@@ -16,7 +16,9 @@ OUT = HERE / "人生の断面図_資料.html"
 DOCS = [
     ("rules", "TTP分析と法則", "01_TTP分析と法則.md"),
     ("design", "チャンネル設計", "02_新チャンネル設計.md"),
-    ("shorts", "ショート台本", "04_ショート台本.md"),
+    ("meta", "ショートのタイトル・説明欄・サムネ", "shorts/タイトル_説明欄_サムネ.md"),
+    ("shorts5", "ショート5本の使い方", "shorts/README.md"),
+    ("shorts", "ショート台本（初期案）", "04_ショート台本.md"),
     ("long", "長尺台本", "05_長尺台本_年収と時間.md"),
     ("data", "再生数データ", "03_再生数データ記入表.md"),
 ]
@@ -88,6 +90,38 @@ strong { color: var(--fg); background: linear-gradient(transparent 62%, var(--ga
 .alts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 12px; }
 .alts figure { margin: 0; } .alts img { width: 100%; border-radius: 8px; border: 1px solid var(--line); }
 .alts figcaption { color: var(--muted); font-size: .85rem; }
+.copywrap { position: relative; }
+.copybtn { position: absolute; top: 6px; right: 6px; font: inherit; font-size: .8rem; padding: 4px 10px;
+  border-radius: 6px; border: 1px solid var(--line); background: var(--paper); color: var(--fg); cursor: pointer; }
+.copybtn:focus-visible { outline: 2px solid var(--accent); }
+"""
+
+
+SCRIPT_JS = """<script>
+document.querySelectorAll("pre").forEach(function (pre) {
+  var wrap = document.createElement("div");
+  wrap.className = "copywrap";
+  pre.parentNode.insertBefore(wrap, pre);
+  wrap.appendChild(pre);
+  var btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "copybtn";
+  btn.textContent = "コピー";
+  btn.addEventListener("click", function () {
+    var t = pre.innerText;
+    var done = function () { btn.textContent = "コピーしました"; setTimeout(function () { btn.textContent = "コピー"; }, 1500); };
+    try {
+      navigator.clipboard.writeText(t).then(done, function () { select(); });
+    } catch (e) { select(); }
+    function select() {
+      var r = document.createRange(); r.selectNodeContents(pre);
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      btn.textContent = "選択しました（Ctrl+C）";
+    }
+  });
+  wrap.appendChild(btn);
+});
+</script>
 """
 
 
@@ -133,6 +167,7 @@ def build():
   <nav aria-label="資料の目次">{nav}</nav>
   {"".join(sections)}
 </div>
+{SCRIPT_JS}
 """
     OUT.write_text(page, encoding="utf-8")
     print("ok:", OUT, f"{OUT.stat().st_size // 1024}KB")
