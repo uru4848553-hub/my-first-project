@@ -7,3 +7,6 @@ run.bat
 samples/動画_生成テスト/
 app_settings.json
 *.lnk
+
+# Claude Code のこのPCだけの設定（許可など）
+.claude/settings.local.json
