@@ -14,6 +14,7 @@ HERE = Path(__file__).resolve().parent
 OUT = HERE / "人生の断面図_資料.html"
 
 DOCS = [
+    ("rivals", "競合5チャンネル分析", "06_競合5チャンネル分析.md"),
     ("rules", "TTP分析と法則", "01_TTP分析と法則.md"),
     ("design", "チャンネル設計", "02_新チャンネル設計.md"),
     ("meta", "ショートのタイトル・説明欄・サムネ", "shorts/タイトル_説明欄_サムネ.md"),
