@@ -4,8 +4,8 @@ import subprocess
 import tempfile
 import unittest
 
-from core.ffmpeg import extract_last_frame, probe_video
-from core.fit import apply_fit, freeze_dir_for, section_clips, video_frames
+from core.ffmpeg import extract_last_frame, motion_size, probe_video
+from core.fit import apply_fit, freeze_dir_for, motion_for, section_clips, still_video_path, video_frames
 
 HAS_FFMPEG = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))
 
@@ -66,6 +66,25 @@ def pixel(png):
     out = subprocess.run(["ffmpeg", "-v", "error", "-i", png, "-f", "rawvideo", "-pix_fmt", "rgb24", "-frames:v", "1", "-"],
                          capture_output=True, check=True).stdout
     return tuple(out[:3])
+
+
+class MotionTest(unittest.TestCase):
+    def test_motion_for(self):
+        self.assertEqual([motion_for("none", i) for i in range(3)], [None, None, None])
+        self.assertEqual([motion_for("zoom_in", i) for i in range(3)], ["in", "in", "in"])
+        self.assertEqual([motion_for("zoom_out", i) for i in range(3)], ["out", "out", "out"])
+        self.assertEqual([motion_for("alternate", i) for i in range(4)], ["in", "out", "in", "out"])
+
+    def test_still_video_path_includes_motion(self):
+        freeze = "/m/_freeze/S01_a_last_0123abcd.png"
+        self.assertEqual(still_video_path(freeze, 60), "/m/_freeze/S01_a_last_0123abcd_60f.mp4")
+        self.assertEqual(still_video_path(freeze, 60, "in", 1.08), "/m/_freeze/S01_a_last_0123abcd_60f_zin108.mp4")
+        self.assertEqual(still_video_path(freeze, 60, "out", 1.2), "/m/_freeze/S01_a_last_0123abcd_60f_zout120.mp4")
+
+    def test_motion_size(self):
+        self.assertEqual(motion_size(1080, 1920), (1080, 1920))
+        self.assertEqual(motion_size(101, 75), (100, 74))           # 偶数に
+        self.assertEqual(motion_size(4000, 3000), (2160, 1620))     # 長辺 2160 以内
 
 
 @unittest.skipUnless(HAS_FFMPEG, "ffmpeg / ffprobe がない")
@@ -165,6 +184,48 @@ class FFmpegTest(unittest.TestCase):
         self.assertNotEqual(new["path"], freeze["path"])
         self.assertGreater(pixel(new["path"])[2], 200)        # 青
         self.assertGreater(pixel(freeze["path"])[1], 100)     # 古い方は緑のまま
+
+    def test_apply_fit_with_motion(self):
+        media = os.path.join(self.dir, "media")
+        os.makedirs(media)
+        a = os.path.join(media, "S01_a.png")
+        b = os.path.join(media, "S02_b.png")
+        short = os.path.join(media, "S03_short.mp4")
+        for path in (a, b):
+            # 外側が赤、中央が青の画像。寄ると端の赤が画面の外に出ていく
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", "color=c=red:s=200x100",
+                            "-vf", "drawbox=x=8:y=4:w=184:h=92:color=blue:t=fill,format=rgb24",
+                            "-frames:v", "1", path], check=True)
+        make_video(short, ["green"], [1])
+        plan = {"fps": 30, "errors": [], "sections": [
+            dict(section("image", 0, 30, a), label="S01"),
+            dict(section("image", 30, 30, b), label="S02"),
+            dict(section("video", 60, 60, short), label="S03"),    # 動画1秒＋静止1秒
+        ]}
+        errors, _ = apply_fit(plan, log=lambda m: None, motion="alternate", zoom=1.2)
+        self.assertEqual(errors, [])
+        s1, s2, s3 = (sec["clips"] for sec in plan["sections"])
+        self.assertEqual((s1[0]["motion"], s2[0]["motion"]), ("in", "out"))
+        self.assertRegex(os.path.basename(s1[0]["path"]), r"_30f_zin120\.mp4$")
+        self.assertRegex(os.path.basename(s2[0]["path"]), r"_30f_zout120\.mp4$")
+        self.assertNotIn("motion", s3[1])                                   # 最終フレームの静止画は動かさない
+        self.assertRegex(os.path.basename(s3[1]["path"]), r"_30f\.mp4$")
+        for clip in (s1[0], s2[0]):
+            info = probe_video(clip["path"])
+            self.assertEqual((info["width"], info["height"]), (200, 100))
+            self.assertAlmostEqual(info["duration"] * 30, 30, delta=0.5)
+
+        def corner(path, index):
+            out = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-vf", f"select=eq(n\\,{index})",
+                                  "-f", "rawvideo", "-pix_fmt", "rgb24", "-frames:v", "1", "-"],
+                                 capture_output=True, check=True).stdout
+            return tuple(out[:3])   # 左上の画素
+
+        # 寄る：最初は端が赤、最後は寄って端まで青。引く：その逆
+        self.assertGreater(corner(s1[0]["path"], 0)[0], 150)
+        self.assertGreater(corner(s1[0]["path"], 29)[2], 150)
+        self.assertGreater(corner(s2[0]["path"], 0)[2], 150)
+        self.assertGreater(corner(s2[0]["path"], 29)[0], 150)
 
     def test_broken_image_is_error(self):
         image = os.path.join(self.dir, "S01_broken.png")
