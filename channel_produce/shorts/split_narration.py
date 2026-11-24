@@ -25,6 +25,49 @@ def silences(path):
     return list(zip(starts, ends))
 
 
+def pick_gaps(gaps, lengths, total):
+    """境目を「場面の数−1」か所選ぶ。各場面の文字数から予想した境目の時刻に近く、
+    しかも長い無音ほど選ばれやすくする（文の途中の短い間を、場面の境目と取り違えないため）"""
+    n = len(lengths) - 1
+    pause_total = sum(e - s for s, e in sorted(gaps, key=lambda g: g[1] - g[0], reverse=True)[:n])
+    speech = max(total - pause_total, 1.0)
+    cum, acc = [], 0
+    for i, length in enumerate(lengths[:-1]):
+        acc += length
+        cum.append(acc)
+    char_total = sum(lengths)
+    mids = [(s + e) / 2 for s, e in gaps]
+    # 予想の境目：話している時間を文字数で割り振り、それまでの境目の無音の平均の長さを足す
+    avg_pause = pause_total / max(n, 1)
+    expected = [speech * c / char_total + avg_pause * (i + 0.5) for i, c in enumerate(cum)]
+    INF = float("inf")
+    g = len(gaps)
+    # dp[i][j]：i 番目の境目に j 番目の無音を使ったときの最小のずれ
+    dp = [[INF] * g for _ in range(n)]
+    back = [[-1] * g for _ in range(n)]
+    for j in range(g):
+        dp[0][j] = cost(mids[j], expected[0], gaps[j])
+    for i in range(1, n):
+        best, arg = INF, -1
+        for j in range(g):
+            if j - 1 >= 0 and dp[i - 1][j - 1] < best:
+                best, arg = dp[i - 1][j - 1], j - 1
+            if best < INF:
+                dp[i][j] = best + cost(mids[j], expected[i], gaps[j])
+                back[i][j] = arg
+    j = min(range(g), key=lambda k: dp[n - 1][k])
+    picked = []
+    for i in range(n - 1, -1, -1):
+        picked.append(gaps[j])
+        j = back[i][j]
+    return list(reversed(picked))
+
+
+def cost(mid, expected, gap):
+    """予想とのずれ（秒の2乗）から、無音の長さぶんを引く（長い無音ほど境目らしい）"""
+    return (mid - expected) ** 2 - 4.0 * (gap[1] - gap[0])
+
+
 def duration(path):
     out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path)],
                          capture_output=True, text=True, check=True).stdout
@@ -40,7 +83,7 @@ def main(folder, narration):
     gaps = [(s, e) for s, e in silences(narration) if s > 0.2 and e < total - 0.2]
     if len(gaps) < len(keys) - 1:
         raise SystemExit(f"場面の境目が足りません：無音 {len(gaps)} か所、必要 {len(keys) - 1} か所。読ませ直してください")
-    chosen = sorted(sorted(gaps, key=lambda g: g[1] - g[0], reverse=True)[:len(keys) - 1])
+    chosen = pick_gaps(gaps, [len(sec.text) for sc in result.scenes for sec in sc.sections], total)
     cuts = [0.0] + [(s + e) / 2 for s, e in chosen] + [total]
     out_dir = folder / "narr"
     out_dir.mkdir(exist_ok=True)

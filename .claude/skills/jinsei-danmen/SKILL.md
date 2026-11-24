@@ -130,6 +130,14 @@ description: ヒロキの新しいYouTubeチャンネル「人生の断面図」
 
 ## 9. 制作の道具（リポジトリ `my-first-project` があるとき）
 
+**ショートを投稿できる mp4 まで仕上げる流れ（2026-11-24 確立）**
+1. ナレーション：TapNow の `create_audio`（mode speech、model **elevenlabs-v3**、voice **george**＝声A。ヒロキは ElevenLabs のAPIキーを渡さない方針なので TapNow 経由）。**1本のショートを1回で読ませ、場面の間に ` [long pause] ` を入れる**（場面ごとに分けて頼むと TapNow の回数制限に当たる）。1回あたり約0.05ポイント
+   - 読み間違えやすい語はかなにしてから読ませる：IQ→アイキュー、AI→エーアイ、Z世代→ゼット世代、4人→よにん、1000万→せんまん、1000人→せんにん、7つ→ななつ、1つ→ひとつ、何階→なんかい、何世代→なんせだい、1階→いっかい、稟議→りんぎ、判子→はんこ
+2. `python channel_produce/shorts/split_narration.py <フォルダ> <ナレーション.mp3>`：無音と各場面の文字数から境目を選んで `narr/S01.mp3`… に切る（短い間を境目と取り違えないよう、文字数から予想した位置に近い無音を選ぶ）
+3. `python channel_produce/shorts/render_final.py <フォルダ>`：場面の長さ＝ナレーション＋間に合わせて映像（動く mp4／画像はゆっくりズーム）・テロップ（「や（の前、、。の後で改行）・効果音を組み、-14 LUFS にそろえて `完成_ナレーション入り.mp4` を出す（Resolve なしで投稿できる）
+4. サムネ：Midjourney（TapNow の midjourney-v8.2、9:16、4案）→ 一番良い案を選ぶ（上に文字の空き、4階がはっきり、1つの階がアンバー）→ GPT Image（gpt-image-2.6-sunburst）で文字だけ入れる → 1080×1920 の `サムネイル.jpg`。ショート5本は 1C・2D・3D・4C・5C を採用
+- TapNow の生成物は `files.tapnow.media` から curl でダウンロードできる（環境の許可済みホスト）
+
 - 台本 script.md → `autoedit.py "<動画フォルダ>" --motion alternate` で DaVinci Resolve に組み上げ（画像はゆっくりズーム、テロップは Text+、効果音は se/K01_〜.wav）
 - ショートの素材：`channel_produce/shorts/make_short01.py`、`make_shorts_2to5.py`（絵の部品は `blueprint.py`、効果音は `sfx.py`）
 - アイコン・バナー：`channel_produce/make_brand.py`
