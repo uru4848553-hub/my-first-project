@@ -74,9 +74,12 @@ def duration(path):
     return float(out)
 
 
-def main(folder, narration):
+def main(folder, narration, scenes=None):
+    """scenes：シーン番号のリスト（例 ["S04","S05"]）。台本の一部だけを1回で読ませたときに使う"""
     folder, narration = Path(folder), Path(narration)
     result = parse_script((folder / "script.md").read_text(encoding="utf-8-sig"))
+    if scenes:
+        result.scenes = [sc for sc in result.scenes if sc.id in scenes]
     keys = [s.key for sc in result.scenes for s in sc.sections]
     total = duration(narration)
     # 頭と終わりの無音は境目にしない
@@ -97,4 +100,5 @@ def main(folder, narration):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    # 例：split_narration.py <フォルダ> <ナレーション.mp3> S04,S05
+    main(sys.argv[1], sys.argv[2], sys.argv[3].split(",") if len(sys.argv) > 3 else None)

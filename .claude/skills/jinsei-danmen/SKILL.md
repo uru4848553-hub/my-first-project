@@ -99,7 +99,7 @@ description: ヒロキの新しいYouTubeチャンネル「人生の断面図」
 - 5〜25秒：1階から順に心の声（1人5秒）
 - 25〜40秒：研究を1つ
 - 40〜50秒：救い→「あなたは何階でした？」→最後の絵を冒頭の絵と同じにしてループ
-- 長尺ができたら、ショートは**長尺の一番強い場面の切り出し**にする（新作は作らない）
+- 長尺ができたら、ショートは**長尺の一番強い場面の切り出し**にする（新作は作らない）。長尺1本→ショート5本（各場面1本＋結末の手紙1本）。最後は「本編で、4人の20年をたどる。あなたは、何階でした？」で本編へ誘導し、投稿時に関連動画へ長尺を指定する。例：`channel_produce/shorts/make_shorts_6to10.py`
 
 例：`references/ショート台本の例_年収.md`（自動配置ツールの script.md 形式。「テロップ：」「効果音：K01 +0.35」の指示付き）
 
@@ -141,6 +141,15 @@ description: ヒロキの新しいYouTubeチャンネル「人生の断面図」
 3. `python channel_produce/shorts/render_final.py <フォルダ>`：場面の長さ＝ナレーション＋間に合わせて映像（動く mp4／画像はゆっくりズーム）・テロップ（「や（の前、、。の後で改行）・効果音を組み、-14 LUFS にそろえて `完成_ナレーション入り.mp4` を出す（Resolve なしで投稿できる）
 4. サムネ：Midjourney（TapNow の midjourney-v8.2、9:16、4案）→ 一番良い案を選ぶ（上に文字の空き、4階がはっきり、1つの階がアンバー）→ GPT Image（gpt-image-2.6-sunburst）で文字だけ入れる → 1080×1920 の `サムネイル.jpg`。ショート5本は 1C・2D・3D・4C・5C を採用
 - TapNow の生成物は `files.tapnow.media` から curl でダウンロードできる（環境の許可済みホスト）
+
+**長尺を仕上げる流れ（2026-11-25 第1弾で確立）**
+1. 台本 script.md：テロップの指示は書かない（字幕を自動で入れる）。場面は [a][b]… で細かく切る（1場面＝1枚の絵、5〜20秒）
+2. 絵：`channel_produce/long/make_long01.py` の部品（card・reason・research・room・bldg・envelopes・ties・snow_room など）で 1920×1080 の PNG を作る（`bp.W, bp.H = 1920, 1080`）。コンタクトシートで重なりを確かめる
+3. ナレーション：シーン2〜3個ずつを1回で読ませ（約1,000字＝4回）、`split_narration.py <フォルダ> <mp3> S08,S09` でシーンを指定して切る
+4. `render_final.py <フォルダ> --landscape --subtitles`：横長・字幕焼き込み（。？！で区切り、30字超は真ん中の、で分ける）。62枚で20〜30分かかる
+5. サムネ：Midjourney 16:9（ビルを右3分の1、左は空ける）→ `make_long01_thumb.py` で Pillow で文字を入れる（1280×720）
+
+**クレジット節約（2026-11-25 ヒロキの要望）**：絵は Pillow（無料）、ナレーションは TapNow ElevenLabs（長尺4回＋ショート5回で約0.5）、Midjourney は長尺サムネの1回だけ（約20）。文字入れは GPT Image を使わず Pillow（無料、字も崩れない）。ショートのサムネも各回の絵＋Pillow の文字（`make_thumbs_6to10.py`）。長尺1本＋ショート5本で合計 約21ポイント
 
 - 台本 script.md → `autoedit.py "<動画フォルダ>" --motion alternate` で DaVinci Resolve に組み上げ（画像はゆっくりズーム、テロップは Text+、効果音は se/K01_〜.wav）
 - ショートの素材：`channel_produce/shorts/make_short01.py`、`make_shorts_2to5.py`（絵の部品は `blueprint.py`、効果音は `sfx.py`）

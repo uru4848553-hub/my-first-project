@@ -73,15 +73,52 @@ def find_media(media_dir, key):
     return Path(found[0])
 
 
+SIZE = [1080, 1920]   # 横長（長尺）のときは --landscape で 1920×1080
+
+
 def video_segment(src, frames, dst):
     """動画を frames フレームにする（短ければ最後の絵で止め、長ければ切る）"""
+    w, h = SIZE
     run(["-i", str(src), "-an", "-vf",
-         f"fps={FPS},scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,"
+         f"fps={FPS},scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,"
          f"tpad=stop_mode=clone:stop_duration=600,trim=end_frame={frames},setpts=PTS-STARTPTS,format=yuv420p",
          "-c:v", "libx264", "-crf", "14", "-preset", "medium", "-r", str(FPS), str(dst)])
 
 
-def build(folder, voice_dir, out_name, bgm_volume):
+def subtitle_chunks(text):
+    """字幕のかたまり：文（。？！）ごと。長い文は、真ん中に近い「、」で2つに分ける"""
+    import re
+    chunks = []
+    for sent in [x for x in re.split(r"(?<=[。？！])", text) if x.strip()]:
+        if len(sent) > 30 and "、" in sent:
+            commas = [m.end() for m in re.finditer("、", sent)]
+            cut = min(commas, key=lambda c: abs(c - len(sent) / 2))
+            chunks += [sent[:cut], sent[cut:]]
+        else:
+            chunks.append(sent)
+    return [c.strip() for c in chunks if c.strip()]
+
+
+def ass_time(t):
+    h, rem = divmod(max(t, 0), 3600)
+    m, sec = divmod(rem, 60)
+    return f"{int(h)}:{int(m):02d}:{sec:05.2f}"
+
+
+def write_ass(path, events, font_name, size):
+    w, h = SIZE
+    lines = ["[Script Info]", "ScriptType: v4.00+", f"PlayResX: {w}", f"PlayResY: {h}", "WrapStyle: 0", "",
+             "[V4+ Styles]",
+             "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, "
+             "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
+             f"Style: Sub,{font_name},{size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,5,0,2,80,80,40,1",
+             "", "[Events]", "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text"]
+    for start, end, text in events:
+        lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Sub,,0,0,0,,{text}")
+    Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def build(folder, voice_dir, out_name, bgm_volume, subtitles=False):
     folder = Path(folder)
     result = parse_script((folder / "script.md").read_text(encoding="utf-8-sig"))
     if result.errors:
@@ -102,6 +139,7 @@ def build(folder, voice_dir, out_name, bgm_volume):
     bounds = [round(s * FPS) for s, _, _ in times] + [round(total * FPS)]
 
     config = dict(DEFAULTS)
+    config["width"], config["height"] = SIZE
     if not config.get("telop_font"):
         for cand in ("C:/Windows/Fonts/meiryob.ttc", "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf",
                      "/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf"):
@@ -149,6 +187,27 @@ def build(folder, voice_dir, out_name, bgm_volume):
             graph.append(f"[{last_v}][{k + 1}:v]overlay=0:0:enable='between(t,{start:.3f},{end:.3f})'[o{k}]")
             last_v = f"o{k}"
 
+        # 3.5 字幕（長尺）：場面のナレーションの長さを、文の文字数で割り振る
+        if subtitles:
+            events = []
+            for i, (scene, sec) in enumerate(sections):
+                start = bounds[i] / FPS + LEAD
+                speak = duration(times[i][2])
+                chunks = subtitle_chunks(sec.text)
+                total_chars = sum(len(c) for c in chunks) or 1
+                t0 = start
+                for c in chunks:
+                    t1 = t0 + speak * len(c) / total_chars
+                    events.append((t0, t1 + 0.15, c))
+                    t0 = t1
+            ass = tmp / "sub.ass"
+            font_file = config["telop_font"]
+            write_ass(ass, events, "Meiryo" if "meiryo" in font_file.lower() else "IPAGothic", 54)
+            fonts_dir = str(Path(font_file).parent).replace("\\", "/").replace(":", "\\:")
+            ass_arg = str(ass).replace("\\", "/").replace(":", "\\:")
+            graph.append(f"[{last_v}]subtitles=filename='{ass_arg}':fontsdir='{fonts_dir}'[subv]")
+            last_v = "subv"
+
         # 4. 音：ナレーション＋効果音（＋BGM）
         a_inputs, a_labels = [], []
         n_in = 1 + len(overlays)
@@ -184,7 +243,7 @@ def build(folder, voice_dir, out_name, bgm_volume):
 
         out = folder / out_name
         run(["-i", str(base), *ov_inputs, *a_inputs, "-filter_complex", ";".join(graph),
-             "-map", f"[{last_v}]" if overlays else "0:v", "-map", "[aud]",
+             "-map", f"[{last_v}]" if last_v != "0:v" else "0:v", "-map", "[aud]",
              "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p", "-r", str(FPS),
              "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", "-t", f"{total:.3f}", str(out)])
     print(f"ok: {out}（{total:.1f}秒）")
@@ -197,8 +256,12 @@ def main():
     ap.add_argument("--voice-dir", default="narr")
     ap.add_argument("--out", default="完成_ナレーション入り.mp4")
     ap.add_argument("--bgm-volume", type=float, default=0.12)
+    ap.add_argument("--landscape", action="store_true", help="横長（1920×1080）で書き出す（長尺）")
+    ap.add_argument("--subtitles", action="store_true", help="ナレーションの字幕を画面の下に出す（長尺）")
     a = ap.parse_args()
-    build(a.folder, a.voice_dir, a.out, a.bgm_volume)
+    if a.landscape:
+        SIZE[:] = [1920, 1080]
+    build(a.folder, a.voice_dir, a.out, a.bgm_volume, subtitles=a.subtitles)
 
 
 if __name__ == "__main__":
