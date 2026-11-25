@@ -149,7 +149,7 @@ description: ヒロキの新しいYouTubeチャンネル「人生の断面図」
 4. `render_final.py <フォルダ> --landscape --subtitles`：横長・字幕焼き込み（。？！で区切り、30字超は真ん中の、で分ける）。62枚で20〜30分かかる
 5. サムネ：Midjourney 16:9（ビルを右3分の1、左は空ける）→ `make_long01_thumb.py` で Pillow で文字を入れる（1280×720）
 
-**クレジット節約（2026-11-25 ヒロキの要望）**：絵は Pillow（無料）、ナレーションは TapNow ElevenLabs（長尺4回＋ショート5回で約0.5）、Midjourney は長尺サムネの1回だけ（約20）。文字入れは GPT Image を使わず Pillow（無料、字も崩れない）。ショートのサムネも各回の絵＋Pillow の文字（`make_thumbs_6to10.py`）。長尺1本＋ショート5本で合計 約21ポイント
+**クレジット節約（2026-11-25 ヒロキの要望）**：絵は Pillow（無料）、ナレーションは TapNow ElevenLabs（長尺4回＋ショート5回で約0.5）、Midjourney は長尺サムネの1回だけ（約20）。文字入れは GPT Image を使わず Pillow（無料、字も崩れない）。ショートのサムネも各回の絵＋Pillow の文字（`make_thumbs_6to10.py`）。費用は作る前と後に get_tapies_balance で残高を見て記録する（ナレーションの単価は文字数で変わるため、見積もりより実測を使う）
 
 - 台本 script.md → `autoedit.py "<動画フォルダ>" --motion alternate` で DaVinci Resolve に組み上げ（画像はゆっくりズーム、テロップは Text+、効果音は se/K01_〜.wav）
 - ショートの素材：`channel_produce/shorts/make_short01.py`、`make_shorts_2to5.py`（絵の部品は `blueprint.py`、効果音は `sfx.py`）
