@@ -70,8 +70,9 @@ def clocks_building(times):
         floors = building_scene(d, LABELS, NAMES, label_size=40)
         for i, (a, top, b, bot) in enumerate(floors):
             h, m, lab = times[i]
-            clock(d, a + 400, (top + bot) / 2 - 12, h, m, r=55, color=AMBER if i == 0 else LINE)
-            text(d, (a + 400, bot - 22), lab, 24, fill=LINE_DIM)
+            # 時刻は時計の右に40pxで（小さな注記に意味を持たせない）
+            clock(d, a + 330, (top + bot) / 2, h, m, r=55, color=AMBER if i == 0 else LINE)
+            text(d, (a + 400, (top + bot) / 2), lab.split()[0], 40, fill=AMBER if i == 0 else WHITE, anchor="lm")
         return im
     return make
 
@@ -91,7 +92,7 @@ def big_card(lines, amber=(), head=None):
 def research_card(title, draw):
     def make():
         im, d = canvas()
-        text(d, (540, 690), title, 34, fill=LINE_DIM)
+        text(d, (540, 690), title, 40, fill=LINE_DIM)
         draw(d)
         return im
     return make
@@ -495,8 +496,9 @@ def make_8():
 
     def s05(d):
         from blueprint import bar_chart
-        bar_chart(d, 260, 860, [70, 100], ["物を買う", "時間を買う"], h=420, bw=180, gap=180, colors=[LINE_DIM, AMBER], size=36)
-        text(d, (540, 1450), "生活の満足（高さはイメージ）", 32, fill=LINE_DIM)
+        text(d, (540, 800), "生活の満足", 52, fill=WHITE)
+        bar_chart(d, 230, 900, [70, 100], ["物を買う", "時間を買う"], h=440, bw=220, gap=180, colors=[LINE_DIM, AMBER], size=46)
+        text(d, (540, 1480), "時間を買う人ほど、満足が高い", 44, fill=AMBER)
 
     def s06():
         im, d = canvas()
@@ -526,13 +528,30 @@ def make_9():
             bubble(d, (400, 820 + k * 170, 880, 950 + k * 170), lab, 36, color=AMBER if k == 1 else LINE)
 
     def s05(d):
-        ties(d, 540, 1100, 5, 14)
-        text(d, (540, 1450), "点線＝ちょっとした知り合い", 36, fill=AMBER)
+        # 左：仲のいい友達（実線・少ない）、右：ちょっとした知り合い（点線・多い）。仕事の話は右から届く
+        import math
+        text(d, (540, 780), "仕事の話は、どこから来た？", 48, fill=WHITE)
+        for cx, n, dash, lab, col in [(280, 3, False, "仲のいい友達", LINE), (800, 9, True, "ちょっとした知り合い", AMBER)]:
+            person(d, cx, 1180, h=150, color=WHITE, width=4)
+            for k in range(n):
+                a = math.pi * (0.15 + 0.7 * k / max(1, n - 1)) + math.pi
+                x, y = cx + 190 * math.cos(a), 1060 + 190 * math.sin(a)
+                if dash:
+                    dashed(d, (cx, 1060), (x, y), color=col, width=4)
+                else:
+                    d.line([(cx, 1060), (x, y)], fill=col, width=6)
+                d.ellipse([x - 16, y - 16, x + 16, y + 16], fill=col)
+            text(d, (cx, 1260), lab, 42, fill=col)
+        # 知り合いの1人から「仕事の話」の封筒
+        d.rectangle([700, 1330, 900, 1450], outline=AMBER, width=5)
+        d.line([(700, 1330), (800, 1400), (900, 1330)], fill=AMBER, width=5)
+        text(d, (800, 1500), "仕事の話", 44, fill=AMBER)
 
     def s06():
         im, d = canvas()
         ties(d, 540, 940, 4, 22, label="リク：何百人", scale=0.8)
         ties(d, 540, 1380, 3, 3, far_on=False, label="ケンタ：数人", scale=0.6)
+        text(d, (540, 700), "点線＝ちょっとした知り合い", 44, fill=AMBER)
         return im
 
     write_folder("09_ちょっとした知り合い", S9, "ピロン", [
