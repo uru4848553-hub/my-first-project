@@ -13,7 +13,8 @@ def fit(text, max_w, max_size, min_size=40):
 def put(d, text, cy, font, fill, strokes):
     x = (W - font.getlength(text)) / 2
     for sw, sc in strokes: d.text((x, cy), text, font=font, fill=sc, stroke_width=sw, stroke_fill=sc, anchor="lm")
-    d.text((x, cy), text, font=font, fill=fill, stroke_width=4, stroke_fill=fill, anchor="lm")
+    for dx, dy in ((0, 0), (-2, 0), (2, 0), (0, -2), (0, 2)):
+        d.text((x + dx, cy + dy), text, font=font, fill=fill, anchor="lm")
 im = Image.open("media/hiro_S01_疑問.png").convert("RGB")
 s = max(W / im.width, H / im.height)
 im = im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS)
