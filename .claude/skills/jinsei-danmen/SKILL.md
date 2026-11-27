@@ -150,7 +150,7 @@ description: ヒロキの新しいYouTubeチャンネル「人生の断面図」
 ## 9. 制作の道具（リポジトリ `my-first-project` があるとき）
 
 **ショートを投稿できる mp4 まで仕上げる流れ（2026-11-24 確立）**
-1. ナレーション：TapNow の `create_audio`（mode speech、model **elevenlabs-v3**、voice **george**＝声A。ヒロキは ElevenLabs のAPIキーを渡さない方針なので TapNow 経由）。**1本のショートを1回で読ませ、場面の間に ` [long pause] ` を入れる**（場面ごとに分けて頼むと TapNow の回数制限に当たる）。1回あたり約0.05ポイント
+1. ナレーション：TapNow の `create_audio`（mode speech、model **elevenlabs-v3**、voice **george**＝声A。ヒロキは ElevenLabs のAPIキーを渡さない方針なので TapNow 経由）。**1本のショートを1回で読ませ、場面の間に ` [long pause] ` を入れる**（場面ごとに分けて頼むと TapNow の回数制限に当たる）。**費用は文字数で決まり、約0.06ポイント/字**（2026-11-27 実測：長尺約2,700字＋ショート5本約1,900字で271ポイント。長尺1本≈160、ショート1本≈20）
    - 読み間違えやすい語はかなにしてから読ませる：IQ→アイキュー、AI→エーアイ、Z世代→ゼット世代、4人→よにん、1000万→せんまん、1000人→せんにん、7つ→ななつ、1つ→ひとつ、何階→なんかい、何世代→なんせだい、1階→いっかい、稟議→りんぎ、判子→はんこ
 2. `python channel_produce/shorts/split_narration.py <フォルダ> <ナレーション.mp3>`：無音と各場面の文字数から境目を選んで `narr/S01.mp3`… に切る（短い間を境目と取り違えないよう、文字数から予想した位置に近い無音を選ぶ）
 3. `python channel_produce/shorts/render_final.py <フォルダ>`：場面の長さ＝ナレーション＋間に合わせて映像（動く mp4／画像はゆっくりズーム）・テロップ（「や（の前、、。の後で改行）・効果音を組み、-14 LUFS にそろえて `完成_ナレーション入り.mp4` を出す（Resolve なしで投稿できる）
@@ -164,7 +164,7 @@ description: ヒロキの新しいYouTubeチャンネル「人生の断面図」
 4. `render_final.py <フォルダ> --landscape --subtitles`：横長・字幕焼き込み（。？！で区切り、30字超は真ん中の、で分ける）。62枚で20〜30分かかる
 5. サムネ：Midjourney 16:9（ビルを右3分の1、左は空ける）→ `make_long01_thumb.py` で Pillow で文字を入れる（1280×720）
 
-**クレジット節約（2026-11-25 ヒロキの要望）**：絵は Pillow（無料）、ナレーションは TapNow ElevenLabs（長尺4回＋ショート5回で約0.5）、Midjourney は長尺サムネの1回だけ（約20）。文字入れは GPT Image を使わず Pillow（無料、字も崩れない）。ショートのサムネは Midjourney の残りの案＋Pillow の文字（`make_thumbs_mj.py`）。費用は作る前と後に get_tapies_balance で残高を見て記録する（ナレーションの単価は文字数で変わるため、見積もりより実測を使う）
+**クレジット節約（2026-11-25 ヒロキの要望）**：絵は Pillow（無料）、**一番お金がかかるのはナレーション**（約0.06ポイント/字。長尺1本＋ショート5本で約270）、Midjourney は1回約20で、残りの案を使い回せば0。文字入れは GPT Image を使わず Pillow（無料、字も崩れない）。ショートのサムネは Midjourney の残りの案＋Pillow の文字（`make_thumbs_mj.py`）。費用は作る前と後に get_tapies_balance で残高を見て記録する（ナレーションの単価は文字数で変わるため、見積もりより実測を使う）
 
 - 台本 script.md → `autoedit.py "<動画フォルダ>" --motion alternate` で DaVinci Resolve に組み上げ（画像はゆっくりズーム、テロップは Text+、効果音は se/K01_〜.wav）
 - ショートの素材：`channel_produce/shorts/make_short01.py`、`make_shorts_2to5.py`（絵の部品は `blueprint.py`、効果音は `sfx.py`）
