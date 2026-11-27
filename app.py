@@ -99,6 +99,7 @@ class App:
         self.project = tk.StringVar(value=self.settings.get("project", "自動編集"))
         self.launch = tk.BooleanVar(value=self.settings.get("launch", True))
         self.telop_bg = tk.BooleanVar(value=self.settings.get("telop_bg", False))
+        self.zoom = tk.BooleanVar(value=self.settings.get("zoom", False))
         self.status = tk.StringVar(value="台本を入力してください")
         self.messages = queue.Queue()
         self.running = False
@@ -216,6 +217,7 @@ class App:
         ttk.Entry(opts, textvariable=self.project, width=24).pack(side="left", padx=6)
         ttk.Checkbutton(opts, text="Resolve が起動していなければ起動する", variable=self.launch).pack(side="left", padx=12)
         ttk.Checkbutton(opts, text="テロップに黒い下地を付ける", variable=self.telop_bg).pack(side="left")
+        ttk.Checkbutton(opts, text="画像をゆっくりズームさせる", variable=self.zoom).pack(side="left", padx=12)
         run = ttk.Frame(step5)
         run.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         self.start_btn = ttk.Button(run, text="▶ スタート", style="Start.TButton", command=self.start)
@@ -463,14 +465,16 @@ class App:
             return
 
         self.settings.update(name=self.name.get(), base_dir=self.base_dir.get(), project=self.project.get(),
-                             launch=self.launch.get(), telop_bg=self.telop_bg.get(), script=self.script_text())
+                             launch=self.launch.get(), telop_bg=self.telop_bg.get(), zoom=self.zoom.get(),
+                             script=self.script_text())
         save_settings(self.settings)
         self._set_running(True)
         self._clear_log()
         # 画面の値は、別スレッドから触らないよう、ここで読み出して渡す
         job = dict(base_dir=self.base_dir.get(), name=self.name.get(), script=self.script_text(),
                    narration=self.narration.get(), bgm=self.bgm.get() or None, materials=materials,
-                   project=self.project.get().strip(), launch=self.launch.get(), telop_bg=self.telop_bg.get())
+                   project=self.project.get().strip(), launch=self.launch.get(), telop_bg=self.telop_bg.get(),
+                   zoom=self.zoom.get())
         threading.Thread(target=self._work, args=(job,), daemon=True).start()
 
     def _work(self, job):
@@ -482,7 +486,8 @@ class App:
             self._post("log", f"動画フォルダ: {folder}")
             self._post("status", "処理中（読み上げとシーンの対応をとっています。数分かかります）...")
             cmd = [child_python(), "-u", os.path.join(ROOT, "autoedit.py"), folder]
-            cmd += ["--title", job["name"].strip(), "--telop-bg", "on" if job["telop_bg"] else "off"]
+            cmd += ["--title", job["name"].strip(), "--telop-bg", "on" if job["telop_bg"] else "off",
+                    "--motion", "alternate" if job["zoom"] else "none"]
             if job["project"]:
                 cmd += ["--project", job["project"]]
             if job["launch"]:

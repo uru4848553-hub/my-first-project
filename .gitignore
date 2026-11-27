@@ -7,3 +7,9 @@ run.bat
 samples/動画_生成テスト/
 app_settings.json
 *.lnk
+
+# Claude Code のこのPCだけの設定（許可など）
+.claude/settings.local.json
+
+# 長尺の高画質版は100MBを超えるため管理外（軽量版をコミット）
+channel_produce/long/*/完成_ナレーション入り.mp4

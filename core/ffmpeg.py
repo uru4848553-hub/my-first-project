@@ -98,13 +98,48 @@ def probe_image(path):
     return streams[0]["width"], streams[0]["height"]
 
 
-def still_to_video(src, dst, frames, fps):
-    """静止画を、その画像が frames フレーム続く動画（H.264・高画質）にする"""
+# ゆっくりズームする動画の長辺の上限（縦 1920 のタイムラインには十分。大きいほど書き出しが遅い）
+MOTION_MAX_SIDE = 2160
+# ズームの計算は画像を2倍に拡大してから行う（そのままだと1ピクセル単位でしか動けず、ゆっくりだとガタつく）
+MOTION_UPSCALE = 2
+
+
+def motion_size(width, height, max_side=MOTION_MAX_SIDE):
+    """ズーム動画の大きさ：長辺を max_side 以内に縮め、偶数にする"""
+    scale = min(1.0, max_side / max(width, height))
+    w = max(2, int(width * scale) // 2 * 2)
+    h = max(2, int(height * scale) // 2 * 2)
+    return w, h
+
+
+def motion_filter(width, height, frames, fps, motion, zoom):
+    """画像を frames フレームかけて、中心へゆっくり寄る（"in"）／引く（"out"）映像フィルタ"""
+    w, h = motion_size(width, height)
+    last = max(frames - 1, 1)
+    grow = f"{zoom - 1:.6f}*on/{last}"
+    z = f"1+{grow}" if motion == "in" else f"{zoom:.6f}-{grow}"
+    return (f"format=rgb24,scale={w * MOTION_UPSCALE}:{h * MOTION_UPSCALE}:flags=lanczos,"
+            f"zoompan=z='{z}':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d={frames}:s={w}x{h}:fps={fps},"
+            "scale=out_color_matrix=bt709:out_range=tv,format=yuv420p")
+
+
+def still_to_video(src, dst, frames, fps, motion=None, zoom=1.08):
+    """静止画を、その画像が frames フレーム続く動画（H.264・高画質）にする。
+
+    motion: None＝止まったまま／"in"＝ゆっくり寄る／"out"＝ゆっくり引く（zoom 倍と等倍の間を動く）
+    """
     # 読めない画像に -loop 1 を使うと ffmpeg が終わらないので、先に確かめる
-    probe_image(src)
-    _run(["ffmpeg", "-y", "-v", "error", "-loop", "1", "-framerate", str(fps), "-i", src,
-          "-frames:v", str(frames), "-vf", STILL_FILTER,
-          "-c:v", "libx264", "-preset", "medium", "-tune", "stillimage", "-crf", "12",
+    width, height = probe_image(src)
+    if motion:
+        # 1枚の画像から zoompan で frames フレーム作る（-loop 1 だと毎フレーム拡大し直して遅い）
+        source = ["-i", src]
+        vf = motion_filter(width, height, frames, fps, motion, zoom)
+    else:
+        source = ["-loop", "1", "-framerate", str(fps), "-i", src]
+        vf = STILL_FILTER
+    _run(["ffmpeg", "-y", "-v", "error", *source,
+          "-frames:v", str(frames), "-vf", vf,
+          "-c:v", "libx264", "-preset", "medium", *([] if motion else ["-tune", "stillimage"]), "-crf", "12",
           "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv",
           "-an", "-movflags", "+faststart", dst])
     if not os.path.isfile(dst) or os.path.getsize(dst) == 0:

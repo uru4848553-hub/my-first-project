@@ -6,6 +6,8 @@
   "whisper_model": "large-v3",
   "low_confidence": 0.5,
   "still_seconds": 3.0,
+  "still_motion": "none",
+  "still_zoom": 1.08,
   "telop_mode": "text",
   "telop_template": "テロップ",
   "telop_line_chars": 0,
